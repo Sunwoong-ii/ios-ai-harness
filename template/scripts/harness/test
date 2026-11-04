@@ -16,7 +16,7 @@ usage() {
   --only 대상      -only-testing 대상: 타깃, 타깃/클래스, 타깃/클래스/메서드. 여러 번 쓸 수 있다
   --generate      변경이 없어도 프로젝트를 다시 생성한다 (Tuist·XcodeGen)
 
-산출물 (.harness/out/): test.log(원본 로그), test.xcresult(결과 번들)
+산출물 (.harness/out/): test-<스킴>.log(원본 로그), test-<스킴>.xcresult(결과 번들)
 EOF
 }
 
@@ -59,8 +59,9 @@ EOF
 start=$SECONDS
 harness_ensure_generated "$force_generate" || exit 1
 
-log="$out_dir/test.log"
-result="$out_dir/test.xcresult"
+# 스킴마다 따로 남긴다. verify가 여러 스킴을 연달아 테스트해도 앞서 실패한 스킴의 로그가 덮어써지지 않는다.
+log="$out_dir/test-$scheme.log"
+result="$out_dir/test-$scheme.xcresult"
 rm -rf "$result"
 
 set +e
