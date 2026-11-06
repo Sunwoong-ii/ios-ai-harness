@@ -97,7 +97,15 @@ harness_destination() {
 generate_fingerprint() {
   (
     cd "$root" || exit 0
-    files="$(git ls-files -co --exclude-standard 2>/dev/null | grep -v '^\.harness/' || true)"
+    # -c는 git 인덱스 기준이라 git rm 없이 지운 파일도 나온다. 작업 트리에 있는 파일만 남긴다.
+    files="$(
+      git ls-files -co --exclude-standard 2>/dev/null \
+        | grep -v '^\.harness/' \
+        | while IFS= read -r f; do
+            if [ -e "$f" ]; then printf '%s\n' "$f"; fi
+          done \
+        || true
+    )"
     {
       printf '%s\n' "$files" | LC_ALL=C sort
       printf '%s\n' "$files" \
