@@ -130,6 +130,8 @@ case "$1 $2" in
   "simctl launch")
     echo "launch-env OS_ACTIVITY_DT_MODE=${SIMCTL_CHILD_OS_ACTIVITY_DT_MODE:-}" >> "$CALLS"
     echo "com.example.App: 123" ;;
+  "simctl pbcopy")
+    echo "pbcopy $3 [$(cat)] LC_ALL=${LC_ALL:-}" >> "$CALLS" ;;
   "simctl io")
     # 1x1 PNG. sips로 JPEG 변환까지 실제로 거친다.
     eval "dest=\${$#}"
@@ -245,13 +247,14 @@ assert_eq "ui tap: 못 찾으면 첫 문장과 tree 안내" "1 ✗ ui tap #nope 
 if out="$(run_fake ui tap startRecordingButton)"; then code=0; else code=$?; fi
 assert_eq "ui tap: --id·--label이 없으면 인자 오류(2)" "2" "$code"
 
-out="$(run_fake ui type "-hello world")"
-assert_eq "ui type: 내용 대신 길이만" "✓ ui type · 12자" "$out"
-assert_eq "ui type: -로 시작해도 그대로 입력" "1" "$(called 'typed -hello world')"
+out="$(run_fake ui type "-Harness 북한강")"
+assert_eq "ui type: 내용 대신 글자 수만" "✓ ui type · 12자 (입력란에 들어갔는지는 ui tree로 확인)" "$out"
+assert_eq "ui type: 시뮬레이터 클립보드에 UTF-8로 넣는다(-로 시작해도, 한글도)" "1" "$(called 'pbcopy SIM1 \[-Harness 북한강\] LC_ALL=en_US.UTF-8')"
+assert_eq "ui type: Cmd+V로 붙여 넣는다" "1" "$(called 'axe key-combo --modifiers 227 --key 25 --udid SIM1')"
+assert_eq "ui type: 키 입력(axe type)은 쓰지 않는다" "0" "$(called 'axe type')"
 
-if out="$(run_fake ui type 북한강)"; then code=0; else code=$?; fi
-assert_eq "ui type: US 키보드 밖의 문자는 거절" "2 harness: type은 US 키보드 문자(영문·숫자·기호·공백)만 입력할 수 있습니다" "$code $out"
-assert_eq "ui type: 거절하면 AXe를 부르지 않는다" "0" "$(called 'axe type')"
+if out="$(run_fake ui type)"; then code=0; else code=$?; fi
+assert_eq "ui type: 텍스트가 없으면 인자 오류(2)" "2" "$code"
 
 if out="$(run_fake ui swipe)"; then code=0; else code=$?; fi
 assert_eq "ui: 모르는 명령은 인자 오류(2)" "2" "$code"

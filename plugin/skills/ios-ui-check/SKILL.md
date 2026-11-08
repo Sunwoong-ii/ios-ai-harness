@@ -14,7 +14,7 @@ description: 시뮬레이터에서 앱을 실행해 화면을 직접 확인하�
 | 빌드 → 설치 → 실행 | `scripts/harness/run` (앱 인자: `scripts/harness/run -- -인자`) |
 | 화면 요소 보기 | `scripts/harness/ui tree` |
 | 누르기 | `scripts/harness/ui tap --id 식별자` / `scripts/harness/ui tap --label 라벨` |
-| 입력란에 입력 | `scripts/harness/ui type "텍스트"` (먼저 입력란을 누른다) |
+| 입력란에 입력 | `scripts/harness/ui type "텍스트"` (먼저 입력란을 누른다. 한글도 된다) |
 | 스크린샷 | `scripts/harness/ui shot 이름` → 출력된 경로를 Read 도구로 연다 |
 
 `ui tree`는 요소마다 `타입 "라벨" #식별자 =값 (비활성) @x,y 너비x높이`를 한 줄씩 보여준다.
@@ -36,5 +36,5 @@ description: 시뮬레이터에서 앱을 실행해 화면을 직접 확인하�
 - `.harness/out/ui/tree.json`(원본)을 통째로 읽지 않는다. 요약에 없는 속성이 필요할 때만 jq로 필요한 부분을 본다.
 - 위치 권한 같은 시스템 알림이 화면을 가리면 tree에 나온다. 라벨로 눌러 닫는다.
 - 앱의 print·Logger 출력은 `.harness/out/app.log`에 있다. 크래시나 에러가 의심되면 끝부분을 본다.
-- `ui type`은 US 키보드 문자(영문·숫자·기호)만 입력한다. 한글 입력이 필요하면 사용자에게 알린다.
+- `ui type`은 클립보드로 붙여 넣는다. 입력한 뒤 `ui tree`로 입력란의 값이 맞는지 본다.
 - AXe가 없다는 안내가 나오면 설치는 사용자에게 맡긴다. 그동안은 `run`과 `ui shot`으로만 확인하고, 그 사실을 보고한다.
