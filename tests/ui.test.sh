@@ -57,4 +57,78 @@ assert_eq "tree: 값" 'StaticText "속도" =72 km/h @20,120 120x20' "$(line 3)"
 assert_eq "tree: 숫자 값" 'Slider #zoom =50 @20,160 200x30' "$(line 4)"
 assert_eq "tree: 라벨 없이 식별자만 있는 입력란" 'TextField #tourNameField @20,200 300x40' "$(line 5)"
 
+# --- 가짜 프로젝트와 명령 ---------------------------------------------------------
+# 스크립트를 임시 scripts/에 복사해서, 옆에 둔 가짜 build를 부르게 한다.
+# xcrun·xcodebuild는 PATH 앞의 가짜 명령으로 바꾸고, 호출을 $CALLS에 기록한다.
+p="$work/project"
+mkdir -p "$p/.harness" "$work/scripts" "$work/bin" "$work/dd/App.app"
+jq -n '{ schemaVersion: 1, generator: "tuist", commands: {}, workspace: "App.xcworkspace", project: null,
+  app: { scheme: "App" }, destination: { simulator: "iPhone 17 Pro", os: "latest" }, modules: null }' > "$p/.harness/project.json"
+cp "$here/../template/scripts/harness/lib.sh" "$here/../template/scripts/harness/run" "$work/scripts/"
+cat > "$work/dd/App.app/Info.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.example.App</string></dict></plist>
+EOF
+
+cat > "$work/scripts/build" <<'EOF'
+#!/bin/bash
+echo "build $*" >> "$CALLS"
+if [ "${FAKE_BUILD_CODE:-0}" != 0 ]; then echo "✗ build 실패"; exit "$FAKE_BUILD_CODE"; fi
+echo "✓ build App"
+EOF
+cat > "$work/bin/xcodebuild" <<'EOF'
+#!/bin/bash
+echo "xcodebuild $*" >> "$CALLS"
+jq -n --arg dir "$FAKE_DD" '[{target: "App", buildSettings: {TARGET_NAME: "App",
+  PRODUCT_TYPE: "com.apple.product-type.application", TARGET_BUILD_DIR: $dir, FULL_PRODUCT_NAME: "App.app"}}]'
+EOF
+cat > "$work/bin/xcrun" <<'EOF'
+#!/bin/bash
+echo "xcrun $*" >> "$CALLS"
+case "$1 $2" in
+  "simctl list")
+    jq -n --arg state "${FAKE_STATE:-Booted}" \
+      '{devices: {"com.apple.CoreSimulator.SimRuntime.iOS-26-5": [{name: "iPhone 17 Pro", udid: "SIM1", state: $state}]}}' ;;
+  "simctl install")
+    if [ "${FAKE_INSTALL_CODE:-0}" != 0 ]; then echo "An error was encountered processing the command"; exit 1; fi ;;
+  "simctl launch")
+    echo "launch-env OS_ACTIVITY_DT_MODE=${SIMCTL_CHILD_OS_ACTIVITY_DT_MODE:-}" >> "$CALLS"
+    echo "com.example.App: 123" ;;
+esac
+EOF
+chmod +x "$work/scripts/build" "$work/scripts/run" "$work/bin/xcodebuild" "$work/bin/xcrun"
+export CALLS="$work/calls" FAKE_DD="$work/dd"
+run_fake() { # 스크립트 인자...
+  local script="$1"; shift
+  : > "$CALLS"
+  HARNESS_ROOT="$p" HARNESS_DERIVED_DATA="$work/derived" PATH="$work/bin:$PATH" "$work/scripts/$script" "$@" 2>&1 \
+    | sed -E 's/ [0-9]+s( |$)/ Ns\1/'
+}
+called() { grep -c -- "$1" "$CALLS" || true; }
+
+# --- run ---------------------------------------------------------------------
+mkdir -p "$p/.harness/out/ui" && touch "$p/.harness/out/ui/old.jpg"
+out="$(run_fake run -- -UseMockSensors)"
+assert_eq "run: 빌드 출력 다음에 한 줄" "✓ build App
+✓ run App · iPhone 17 Pro · Ns · 앱 로그: .harness/out/app.log" "$out"
+assert_eq "run: 앱 스킴으로 빌드" "1" "$(called 'build --scheme App')"
+assert_eq "run: 번들 ID와 실행 인자로 다시 실행" "1" "$(called 'simctl launch --terminate-running-process .* SIM1 com.example.App -UseMockSensors')"
+assert_eq "run: Logger 출력도 앱 로그로" "1" "$(called 'launch-env OS_ACTIVITY_DT_MODE=enable')"
+assert_eq "run: 켜져 있으면 부팅하지 않는다" "0" "$(called 'simctl bootstatus')"
+assert_eq "run: 지난 화면 산출물을 비운다" "0" "$(find "$p/.harness/out/ui" -type f | wc -l | tr -d ' ')"
+
+out="$(FAKE_STATE=Shutdown run_fake run --scheme Demo)"
+assert_eq "run: 꺼져 있으면 부팅" "1" "$(called 'simctl bootstatus SIM1 -b')"
+assert_eq "run: --scheme을 build에 넘긴다" "1" "$(called 'build --scheme Demo')"
+
+if out="$(FAKE_BUILD_CODE=65 run_fake run)"; then code=0; else code=$?; fi
+assert_eq "run: 빌드 실패면 빌드 출력만" "✗ build 실패" "$out"
+assert_eq "run: 빌드의 종료 코드를 그대로" "65" "$code"
+assert_eq "run: 빌드 실패면 설치하지 않는다" "0" "$(called 'simctl install')"
+
+out="$(FAKE_INSTALL_CODE=1 run_fake run)" || true
+assert_eq "run: 설치 실패 요약" "✗ run App 실패 · 설치 · iPhone 17 Pro" "$(printf '%s\n' "$out" | sed -n 2p)"
+assert_eq "run: 설치 실패면 실행하지 않는다" "0" "$(called 'simctl launch')"
+
 finish
