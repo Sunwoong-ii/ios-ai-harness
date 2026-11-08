@@ -345,8 +345,8 @@ claude plugin validate plugin
 ## 진행 상황
 
 - 단위 1~8 완료: 저장소 구조, 프로젝트 설정 파일·detect, build·test·verify, 경로 규칙, AGENTS.md 템플릿, 훅·권한·플러그인, ios-reviewer
-- 단위 9 진행 중: MotoTrace에 설치를 마쳤다. 단위 10을 먼저 하고 운영을 이어 간다. 이 기록으로 이후 순서를 정한다.
-- 단위 10 진행 중: 앱을 실행해 화면을 확인하는 run·ui와 `ios-ui-check` 스킬
+- 단위 9 진행 중: MotoTrace에 설치를 마쳤고, 운영하며 실패를 기록하는 중이다. 이 기록으로 이후 순서를 정한다.
+- 단위 10 완료: 앱을 실행해 화면을 확인하는 run·ui와 `ios-ui-check` 스킬
 - 이후 후보: 빌드·Tuist 스킬, 워크플로 스킬, 플러그인 배포와 init/sync/doctor, 두 번째 프로젝트 적용, Codex 어댑터, 평가 등
 
 자세한 내용은 [docs/roadmap.md](docs/roadmap.md)에 있다. 이 저장소에 기여하는 방법(브랜치, 커밋 규칙)은 [AGENTS.md](AGENTS.md)에 있다.
