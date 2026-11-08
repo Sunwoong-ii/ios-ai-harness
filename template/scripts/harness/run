@@ -61,7 +61,7 @@ fail() { # 단계
   exit 1
 }
 
-harness_boot_simulator "$simulator_udid"
+harness_boot_simulator "$simulator_udid" >> "$log" 2>&1 || fail "부팅"
 xcrun simctl install "$simulator_udid" "$app_path" >> "$log" 2>&1 || fail "설치"
 # OS_ACTIVITY_DT_MODE: Xcode 콘솔처럼 Logger·os_log 출력도 표준 에러로 내보낸다. SIMCTL_CHILD_로 앱에 전달된다.
 # bash 3.2에서 빈 배열을 그대로 펼치면 set -u에 걸려서 ${arr[@]+...} 형태로 쓴다.

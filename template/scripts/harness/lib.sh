@@ -217,9 +217,10 @@ simulator_state() {
 }
 
 # 시뮬레이터($1)가 꺼져 있으면 부팅하고 끝날 때까지 기다린다. 시뮬레이터 창은 열지 않는다.
+# 진행 상황과 에러를 출력하고, 실패하면 0이 아닌 값을 반환한다. 부르는 쪽이 로그로 남겨 실패 원인을 보여준다.
 harness_boot_simulator() {
   if [ "$(simulator_state "$1")" = Booted ]; then return 0; fi
-  xcrun simctl bootstatus "$1" -b > /dev/null 2>&1 || harness_die "시뮬레이터를 부팅하지 못했습니다 ($1)"
+  xcrun simctl bootstatus "$1" -b
 }
 
 # 버전 $1이 $2 이상이면 성공한다 (예: 1.10.0 ≥ 1.8.0).

@@ -109,6 +109,9 @@ case "$1 $2" in
   "simctl list")
     jq -n --arg state "${FAKE_STATE:-Booted}" \
       '{devices: {"com.apple.CoreSimulator.SimRuntime.iOS-26-5": [{name: "iPhone 17 Pro", udid: "SIM1", state: $state}]}}' ;;
+  "simctl bootstatus")
+    echo "Status=4, isTerminal=NO, Elapsed=00:01."
+    if [ -n "${FAKE_BOOT_FAIL:-}" ]; then echo "Unable to boot device in current state: Creating"; exit 1; fi ;;
   "simctl install")
     if [ "${FAKE_INSTALL_CODE:-0}" != 0 ]; then echo "An error was encountered processing the command"; exit 1; fi ;;
   "simctl launch")
@@ -160,6 +163,14 @@ assert_eq "run: 지난 화면 산출물을 비운다" "0" "$(find "$p/.harness/o
 out="$(FAKE_STATE=Shutdown run_fake run --scheme Demo)"
 assert_eq "run: 꺼져 있으면 부팅" "1" "$(called 'simctl bootstatus SIM1 -b')"
 assert_eq "run: --scheme을 build에 넘긴다" "1" "$(called 'build --scheme Demo')"
+
+if out="$(FAKE_STATE=Shutdown FAKE_BOOT_FAIL=1 run_fake run)"; then code=0; else code=$?; fi
+assert_eq "run: 부팅 실패는 원인과 로그 경로를 보여준다" "1 ✓ build App
+✗ run App 실패 · 부팅 · iPhone 17 Pro
+  Status=4, isTerminal=NO, Elapsed=00:01.
+  Unable to boot device in current state: Creating
+  로그: .harness/out/run.log" "$code $out"
+assert_eq "run: 부팅 실패면 설치하지 않는다" "0" "$(called 'simctl install')"
 
 if out="$(FAKE_BUILD_CODE=65 run_fake run)"; then code=0; else code=$?; fi
 assert_eq "run: 빌드 실패면 빌드 출력만" "✗ build 실패" "$out"
