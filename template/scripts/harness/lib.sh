@@ -318,6 +318,11 @@ harness_print_build_errors() {
   if [ "$count" -gt 0 ]; then
     printf '%s' "$json" | format_issues "$root" errors "$max_errors"
     if [ "$count" -gt "$max_errors" ]; then echo "  … 에러 $((count - max_errors))개 더 있음"; fi
+    # 결과 번들의 에러가 "xcodebuild encountered an error (65)"뿐이면 원인(없는 스킴 이름 등)은 로그에만 있다.
+    if ! printf '%s' "$json" \
+      | jq -e '[ .errors[]?.message | select(test("^xcodebuild encountered an error") | not) ] | length > 0' > /dev/null; then
+      { grep -E 'error:' "$log" || true; } | head -n 5 | sed 's/^/  /'
+    fi
   else
     { grep -E 'error:|ERROR' "$log" || tail -n 20 "$log"; } | head -n 20 | sed 's/^/  /' || true
   fi

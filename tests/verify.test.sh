@@ -41,6 +41,17 @@ assert_eq "summary: 위치가 없을 때 대체 출력은 첫 줄만" "  BarTest
 issue='{"errors":[{"issueType":"Error","message":"Testing cancelled because the build failed."}]}'
 assert_eq "issues: 타깃 이름이 없으면 메시지만" "  Testing cancelled because the build failed." "$(printf '%s' "$issue" | format_issues /x errors 5)"
 
+# 없는 스킴을 주면 결과 번들에는 "xcodebuild encountered an error"만 남고 원인은 로그에 있다.
+printf '%s\n' 'Command line invocation:' \
+  'xcodebuild: error: The workspace named "App" does not contain a scheme named "AppTests". The "-list" option can be used to find the names of the schemes in the workspace.' > "$work/build.log"
+generic='{"errorCount":1,"errors":[{"issueType":"Error","message":"xcodebuild encountered an error (65)"}]}'
+assert_eq "build errors: 뭉뚱그린 에러뿐이면 로그의 에러 줄도" "  xcodebuild encountered an error (65)
+  xcodebuild: error: The workspace named \"App\" does not contain a scheme named \"AppTests\". The \"-list\" option can be used to find the names of the schemes in the workspace." \
+  "$(root=/x max_errors=5; harness_print_build_errors "$generic" "$work/build.log")"
+compile='{"errorCount":1,"errors":[{"issueType":"Swift Compiler Error","message":"Cannot find x in scope","targetName":"App"}]}'
+assert_eq "build errors: 위치가 있는 에러가 있으면 로그는 붙이지 않는다" "  App: Cannot find x in scope" \
+  "$(root=/x max_errors=5; harness_print_build_errors "$compile" "$work/build.log")"
+
 # --- harness_derived_data_path ------------------------------------------------
 dd="$(harness_derived_data_path /Users/me/Desktop/App-slot)"
 case "$dd" in
