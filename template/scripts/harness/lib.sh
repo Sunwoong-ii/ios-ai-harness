@@ -1,4 +1,4 @@
-# 하네스 스크립트 공용 함수. build·test·verify가 source한다. (bash 3.2 호환)
+# 하네스 스크립트 공용 함수. build·test·verify·run·ui가 source한다. (bash 3.2 호환)
 #
 # harness_init 이후 쓸 수 있는 변수
 #   root          프로젝트 루트 (HARNESS_ROOT 또는 현재 디렉터리의 git 루트)
@@ -69,6 +69,7 @@ pick_simulator() {
 }
 
 # 설정의 시뮬레이터로 -destination 값을 만든다. 없으면 사용 가능한 이름을 보여주고 멈춘다.
+# destination(-destination 값), destination_label(기기 이름), simulator_udid를 채운다.
 harness_destination() {
   local name os json udid
   name="$(cfg .destination.simulator)"
@@ -87,6 +88,7 @@ harness_destination() {
   fi
   destination="id=$udid"
   destination_label="$name"
+  simulator_udid="$udid"
 }
 
 # --- 프로젝트 생성 (Tuist·XcodeGen) ---------------------------------------------
@@ -184,6 +186,78 @@ module_has_tests() {
     fi
   done
   [ -n "${3:-}" ] && [ -d "$root/$1/$3" ]
+}
+
+# --- 앱 실행과 화면 (run·ui) ------------------------------------------------------
+
+# showBuildSettings JSON(stdin)에서 스킴($1)이 만드는 앱의 경로를 찾는다.
+# 앱 타깃이 여럿이면 이름이 스킴과 같은 것을, 없으면 첫 번째를 고른다.
+pick_app_product() {
+  jq -r --arg scheme "$1" '
+    [ .[].buildSettings | select(.PRODUCT_TYPE == "com.apple.product-type.application") ]
+    | (map(select(.TARGET_NAME == $scheme)) + .) | first
+    | if . then "\(.TARGET_BUILD_DIR)/\(.FULL_PRODUCT_NAME)" else empty end'
+}
+
+# 스킴($1)의 앱 경로를 app_path에 담는다. 빌드 결과물 폴더를 뒤지지 않고 빌드 설정에서 읽는다.
+# Demo 앱처럼 .app이 여럿인 프로젝트가 있어서다. harness_container_args·harness_destination 뒤에 부른다.
+harness_app_path() {
+  local json
+  json="$(xcodebuild -showBuildSettings -json "${container_args[@]}" -scheme "$1" \
+    -destination "$destination" -derivedDataPath "$derived_data" 2>/dev/null)" \
+    || harness_die "스킴 $1의 빌드 설정을 읽지 못했습니다"
+  app_path="$(printf '%s' "$json" | pick_app_product "$1")"
+  [ -n "$app_path" ] || harness_die "스킴 $1에 앱 타깃이 없습니다"
+}
+
+# 시뮬레이터($1)의 상태(Booted, Shutdown 등). 찾지 못하면 빈 문자열.
+simulator_state() {
+  xcrun simctl list devices -j 2>/dev/null \
+    | jq -r --arg udid "$1" '[ .devices[][] | select(.udid == $udid) | .state ][0] // empty'
+}
+
+# 시뮬레이터($1)가 꺼져 있으면 부팅하고 끝날 때까지 기다린다. 시뮬레이터 창은 열지 않는다.
+harness_boot_simulator() {
+  if [ "$(simulator_state "$1")" = Booted ]; then return 0; fi
+  xcrun simctl bootstatus "$1" -b > /dev/null 2>&1 || harness_die "시뮬레이터를 부팅하지 못했습니다 ($1)"
+}
+
+# 버전 $1이 $2 이상이면 성공한다 (예: 1.10.0 ≥ 1.8.0).
+version_at_least() {
+  [ "$(printf '%s\n%s\n' "$2" "$1" | sort -t. -k1,1n -k2,2n -k3,3n | head -n 1)" = "$2" ]
+}
+
+# AXe 경로를 axe에 담는다(HARNESS_AXE로 바꿀 수 있다). 없거나 버전이 낮으면 설치 방법을 보여주고 멈춘다.
+# AXe는 화면 요소 읽기·탭·입력에만 쓴다. 스크린샷과 앱 실행은 simctl로 한다(ADR 0005).
+harness_axe_min_version=1.8.0
+harness_require_axe() {
+  local version
+  axe="${HARNESS_AXE:-$(command -v axe 2>/dev/null || true)}"
+  if [ -z "$axe" ] || [ ! -x "$axe" ]; then
+    harness_die "AXe가 필요합니다: brew install cameroncooke/axe/axe (화면 요소 읽기·탭·입력에 쓴다. 스크린샷은 AXe 없이 된다)"
+  fi
+  version="$("$axe" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1 || true)"
+  if [ -z "$version" ] || ! version_at_least "$version" "$harness_axe_min_version"; then
+    harness_die "AXe ${version:-버전 확인 불가}는 지원하지 않습니다. $harness_axe_min_version 이상이 필요합니다: brew upgrade cameroncooke/axe/axe"
+  fi
+}
+
+# axe describe-ui JSON(stdin)을 요소마다 한 줄로 요약한다: 타입 "라벨" #식별자 =값 (비활성) @x,y 너비x높이
+# - 라벨이나 값이 있는 요소, 식별자가 있는 Group 이외의 요소만 남긴다. 나머지는 배치용 컨테이너다.
+# - 크기가 0인 요소(화면 밖)는 뺀다. 식별자·값이 라벨과 같으면 한 번만 쓴다.
+summarize_ui_tree() {
+  jq -r '
+    def text: (. // "") | tostring | gsub("^\\s+|\\s+$"; "");
+    .. | objects | select(has("type") and has("frame"))
+    | select(.frame.width > 0 and .frame.height > 0)
+    | (.AXLabel | text) as $label | (.AXUniqueId | text) as $id | (.AXValue | text) as $value
+    | select($label != "" or $value != "" or ($id != "" and .type != "Group"))
+    | .type
+      + (if $label != "" then " \"\($label)\"" else "" end)
+      + (if $id != "" and $id != $label then " #\($id)" else "" end)
+      + (if $value != "" and $value != $label then " =\($value)" else "" end)
+      + (if .enabled == false then " (비활성)" else "" end)
+      + " @\(.frame.x | floor),\(.frame.y | floor) \(.frame.width | floor)x\(.frame.height | floor)"'
 }
 
 # --- 결과 요약 ---------------------------------------------------------------
