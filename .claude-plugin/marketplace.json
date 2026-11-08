@@ -8,7 +8,7 @@
     {
       "name": "ios-harness",
       "source": "./plugin",
-      "description": "생성 파일·pbxproj 편집 차단 훅과 iOS 변경 리뷰 서브에이전트"
+      "description": "생성 파일·pbxproj 편집 차단 훅, iOS 변경 리뷰 서브에이전트, 화면 확인 스킬"
     }
   ]
 }
