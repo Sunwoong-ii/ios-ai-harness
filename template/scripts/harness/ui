@@ -50,15 +50,26 @@ fail() { # 제목 [안내]
   exit 1
 }
 
+# AXe를 부른다. 에러는 $err에 남는다.
+# 시뮬레이터에 처음 연결할 때 연결 생성이 실패하는 일이 있다(iOS 27.2: "Timed out creating the simulator
+# remote automation session", iOS 26.3: "No translation object returned"). 이때는 아무 동작도 하지 않았으니
+# 2초 간격으로 두 번 더 시도한다. 요소를 못 찾는 것처럼 다른 실패는 다시 시도하지 않는다.
+axe_run() {
+  local attempt=1
+  while ! "$axe" "$@" 2> "$err"; do
+    if [ "$attempt" -ge 3 ] || ! grep -qE 'remote automation session|No translation object' "$err"; then
+      return 1
+    fi
+    attempt=$((attempt + 1))
+    sleep "${HARNESS_AXE_RETRY_DELAY:-2}"
+  done
+}
+
 ui_tree() {
   local raw="$ui_dir/tree.json" summary count max=200
   [ $# -eq 0 ] || harness_die "tree는 인자를 받지 않습니다"
   harness_require_axe
-  # 오랜만에 처음 부르면 "No translation object returned for simulator"로 한 번 실패한 적이 있어서 한 번 더 시도한다.
-  if ! "$axe" describe-ui --udid "$simulator_udid" > "$raw" 2> "$err"; then
-    sleep 1
-    "$axe" describe-ui --udid "$simulator_udid" > "$raw" 2> "$err" || fail tree
-  fi
+  axe_run describe-ui --udid "$simulator_udid" > "$raw" || fail tree
   summary="$(summarize_ui_tree < "$raw")"
   count="$(printf '%s' "$summary" | grep -c '' || true)"
   echo "· 화면 요소 ${count}개 · 원본: ${raw#$root/}"
@@ -93,7 +104,7 @@ ui_tap() {
   if [ $# -ne 2 ] || [ -z "$2" ]; then harness_die "tap $1에 값이 필요합니다"; fi
   harness_require_axe
   # 화면 전환 중이면 요소가 늦게 나타난다. 최대 5초 기다리고, 누른 뒤 전환 시간을 0.5초 둔다.
-  "$axe" tap "$1" "$2" --udid "$simulator_udid" --wait-timeout 5 --post-delay 0.5 > "$err" 2>&1 \
+  axe_run tap "$1" "$2" --udid "$simulator_udid" --wait-timeout 5 --post-delay 0.5 > /dev/null \
     || fail "tap $label" "화면 요소 확인: scripts/harness/ui tree"
   echo "✓ ui tap $label"
 }

@@ -137,9 +137,14 @@ case "$1 $2" in
 esac
 EOF
 # 가짜 AXe: describe-ui는 $FAKE_TREE를 내보내고, tap은 $FAKE_TAP_FAIL이면 AXe와 같은 문구로 실패한다.
+# $FAKE_SESSION_FAILS번까지는 처음 연결할 때처럼 연결 생성 시간 초과로 실패한다(--version 제외).
 cat > "$work/axe" <<'EOF'
 #!/bin/bash
 echo "axe $*" >> "$CALLS"
+if [ "$1" != --version ] && [ "$(grep -c '^axe [a-z]' "$CALLS")" -le "${FAKE_SESSION_FAILS:-0}" ]; then
+  echo "Error: Timed out creating the simulator remote automation session" >&2
+  exit 1
+fi
 case "$1" in
   --version) echo 1.8.0 ;;
   describe-ui) printf '%s' "$FAKE_TREE" ;;
@@ -153,7 +158,7 @@ case "$1" in
 esac
 EOF
 chmod +x "$work/scripts/build" "$work/scripts/run" "$work/scripts/ui" "$work/bin/xcodebuild" "$work/bin/xcrun" "$work/axe"
-export CALLS="$work/calls" FAKE_DD="$work/dd" HARNESS_AXE="$work/axe"
+export CALLS="$work/calls" FAKE_DD="$work/dd" HARNESS_AXE="$work/axe" HARNESS_AXE_RETRY_DELAY=0
 run_fake() { # 스크립트 인자...
   local script="$1"; shift
   : > "$CALLS"
@@ -207,6 +212,16 @@ assert_eq "ui tree: 원본을 남긴다" "$tree" "$(cat "$p/.harness/out/ui/tree
 
 if out="$(HARNESS_AXE="$work/none" run_fake ui tree)"; then code=0; else code=$?; fi
 assert_eq "ui tree: AXe가 없으면 설정 오류(2)" "2" "$code"
+
+out="$(FAKE_SESSION_FAILS=2 run_fake ui tree | head -n 1)"
+assert_eq "ui tree: 첫 연결이 두 번 실패해도 세 번째에 성공" "· 화면 요소 5개 · 원본: .harness/out/ui/tree.json" "$out"
+if out="$(FAKE_SESSION_FAILS=3 run_fake ui tree)"; then code=0; else code=$?; fi
+assert_eq "ui tree: 세 번 모두 연결에 실패하면 원인을 보여준다" "1 ✗ ui tree 실패
+  Timed out creating the simulator remote automation session" "$code $out"
+out="$(FAKE_SESSION_FAILS=1 run_fake ui tap --id startRecordingButton)"
+assert_eq "ui tap: 연결 실패는 다시 시도해서 누른다" "✓ ui tap #startRecordingButton" "$out"
+FAKE_TAP_FAIL=1 run_fake ui tap --id nope > /dev/null || true
+assert_eq "ui tap: 요소를 못 찾은 실패는 다시 시도하지 않는다" "1" "$(called 'axe tap')"
 
 if out="$(FAKE_STATE=Shutdown run_fake ui tree)"; then code=0; else code=$?; fi
 assert_eq "ui: 시뮬레이터가 꺼져 있으면 run 안내" "2 harness: 시뮬레이터(iPhone 17 Pro)가 꺼져 있습니다. scripts/harness/run으로 앱을 먼저 실행하세요" "$code $out"
