@@ -76,6 +76,19 @@ StaticText "북한강 라이딩" @16,510 200x20
 Button "Dictate" #dictation @325,805 68x68
 Keyboard (화면 키보드가 떠 있음) @0,583 402x233' "$(printf '%s' "$tree" | summarize_ui_tree)"
 
+# 지도(MapKit) 지명: 첫 지명 자리에 한 줄로 모은다. 다섯 개가 넘으면 …로 줄인다.
+place() { printf '{"type":"GenericElement","AXLabel":"%s","AXUniqueId":"VKPointFeature","frame":{"x":10,"y":10,"width":30,"height":30}},' "$1"; }
+map_tree="[{\"type\":\"Application\",\"AXLabel\":\"App\",\"frame\":{\"x\":0,\"y\":0,\"width\":402,\"height\":874},\"children\":[
+  $(place 춘천)$(place 양주)$(place 강릉)
+  {\"type\":\"Button\",\"AXLabel\":\"현재 위치로\",\"frame\":{\"x\":150,\"y\":428,\"width\":97,\"height\":30}},
+  $(place 고양)$(place 서울)$(place 수원)
+  {\"type\":\"GenericElement\",\"AXLabel\":\"화면 밖\",\"AXUniqueId\":\"VKPointFeature\",\"frame\":{\"x\":0,\"y\":0,\"width\":0,\"height\":0}}]}]"
+assert_eq "tree: 지도 지명은 첫 자리에 한 줄로" 'Application "App" @0,0 402x874
+지도 지명 6개 (춘천, 양주, 강릉, 고양, 서울, …)
+Button "현재 위치로" @150,428 97x30' "$(printf '%s' "$map_tree" | summarize_ui_tree)"
+map_tree="[{\"type\":\"Application\",\"AXLabel\":\"App\",\"frame\":{\"x\":0,\"y\":0,\"width\":402,\"height\":874},\"children\":[$(place 춘천)$(place 양주){\"type\":\"Button\",\"AXLabel\":\"확인\",\"frame\":{\"x\":0,\"y\":0,\"width\":50,\"height\":30}}]}]"
+assert_eq "tree: 지명이 다섯 개 이하면 모두" "지도 지명 2개 (춘천, 양주)" "$(printf '%s' "$map_tree" | summarize_ui_tree | sed -n 2p)"
+
 # --- 가짜 프로젝트와 명령 ---------------------------------------------------------
 # 스크립트를 임시 scripts/에 복사해서, 옆에 둔 가짜 build를 부르게 한다.
 # xcrun·xcodebuild는 PATH 앞의 가짜 명령으로 바꾸고, 호출을 $CALLS에 기록한다.

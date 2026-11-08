@@ -247,17 +247,21 @@ harness_require_axe() {
 # - 라벨이나 값이 있는 요소, 식별자가 있는 Group 이외의 요소만 남긴다. 나머지는 배치용 컨테이너다.
 # - 크기가 0인 요소(화면 밖)는 뺀다. 식별자·값이 라벨과 같으면 한 번만 쓴다.
 # - 화면 키보드는 자판마다 요소가 있어서 한 줄로 줄인다. 시스템 스크롤 막대는 뺀다.
+# - 지도(MapKit)의 지명은 수십 개씩 나와서 "지도 지명 N개 (앞의 5개, …)" 한 줄로 줄인다. 전체는 원본에 있다.
 # - 라벨이 있는 버튼·링크 안의 텍스트·이미지는 버튼 라벨과 겹쳐서 뺀다. 연달아 같은 줄은 한 번만 쓴다.
 summarize_ui_tree() {
   jq -r '
     def text: (. // "") | tostring | gsub("^\\s+|\\s+$"; "");
     def visible: (.frame.width // 0) > 0 and (.frame.height // 0) > 0;
     def frame: " @\(.frame.x | floor),\(.frame.y | floor) \(.frame.width | floor)x\(.frame.height | floor)";
+    # 줄은 문자열로, 지도 지명은 {place: 라벨}로 내보내고 마지막에 모은다.
     def summarize($in_control):
       (.AXLabel | text) as $label | (.AXUniqueId | text) as $id | (.AXValue | text) as $value
       | ($in_control or ($label != "" and (.type | IN("Button", "Link", "RadioButton", "Cell")))) as $child_in_control
       | if ($id | startswith("UIKeyboardLayout")) then
           (if visible then "Keyboard (화면 키보드가 떠 있음)" + frame else empty end)
+        elif $id == "VKPointFeature" then
+          (if visible and $label != "" then { place: $label } else empty end)
         else
           ( select(visible)
             | select($label != "" or $value != "" or ($id != "" and .type != "Group"))
@@ -271,7 +275,15 @@ summarize_ui_tree() {
               + frame ),
           ( (.children // [])[] | summarize($child_in_control) )
         end;
-    (if type == "array" then .[] else . end) | summarize(false)' \
+    [ (if type == "array" then .[] else . end) | summarize(false) ] as $items
+    | [ $items[] | objects | .place ] as $places
+    | "지도 지명 \($places | length)개 (\($places[:5] | join(", "))\(if ($places | length) > 5 then ", …" else "" end))" as $place_line
+    # 첫 지명 자리에 요약 한 줄을 넣고, 나머지 지명은 뺀다.
+    | reduce $items[] as $item ({ out: [], placed: false };
+        if ($item | type) == "object" then
+          (if .placed then . else .out += [$place_line] | .placed = true end)
+        else .out += [$item] end)
+    | .out[]' \
     | awk '$0 != prev { print } { prev = $0 }'
 }
 
