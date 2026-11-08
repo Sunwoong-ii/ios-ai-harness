@@ -17,7 +17,7 @@
 
 | 방법 | 장점 | 단점 |
 |---|---|---|
-| **AXe + simctl** | AXe는 접근성 트리 조회, 식별자로 탭, 입력, 스크린샷을 하는 단일 바이너리다(MIT). Homebrew로 설치하고, 릴리스는 Developer ID 서명과 공증을 받는다. 텔레메트리가 없다 | 사실상 개발자 한 명이 관리한다. Apple 비공개 API(Meta idb의 FBSimulatorControl)를 써서 Xcode가 크게 바뀌면 깨질 수 있다 |
+| **AXe + simctl** | AXe는 접근성 트리 조회, 식별자로 탭, 입력, 스크린샷을 하는 단일 바이너리다(MIT). Homebrew로 설치·갱신한다. 텔레메트리가 없다 | 사실상 개발자 한 명이 관리한다. Apple 비공개 API(Meta idb의 FBSimulatorControl)를 써서 Xcode가 크게 바뀌면 깨질 수 있다 |
 | MobileBuildMCP(구 XcodeBuildMCP) CLI | 빌드·실행·UI 자동화·로그를 한데 묶었다 | UI 자동화는 내부에서 AXe를 쓴다. 빌드·테스트는 하네스 스크립트와 겹친다. Node가 필요하고 Sentry 텔레메트리가 기본으로 켜져 있다. 2026-09 이름이 바뀌면서 npm 패키지가 2.7.0에서 멈췄다 |
 | MobileBuildMCP를 MCP 서버로 연결 | Codex 샌드박스에서도 시뮬레이터를 다룰 수 있다 | Sentry 실험에서 셸 방식보다 토큰이 약 2배 들었다 |
 | Xcode 27 `device-interaction` 스킬 | Apple이 만든 스킬이다. 스크린샷, UI 계층, 터치로 앱을 확인한다 | Xcode 27을 띄우고 프로젝트를 열어 둬야 하고, 시뮬레이터가 27.0 이상이어야 한다. CI나 화면 없는 실행, 워크트리별 병렬 세션에 맞지 않는다. 로컬 Xcode는 26.6이다 |
@@ -31,7 +31,8 @@
   - ui tree·tap·type: AXe를 쓴다.
 - **AXe는 선택 의존성이다.** 없거나 버전이 낮으면 ui tree·tap·type만 설치 명령을 알려주고 멈춘다. run과 shot은 AXe 없이 동작한다.
   - 최소 버전은 확인한 1.8.0으로 둔다.
-  - 설치는 공증받은 Homebrew 릴리스로 한다(`brew install cameroncooke/axe/axe`). 다른 도구에 들어 있는 사본은 공증되지 않았을 수 있다.
+  - 설치는 Homebrew로 한다(`brew install cameroncooke/axe/axe`). 버전 관리와 갱신(`brew upgrade`)이 쉬워서다.
+  - Homebrew로 설치한 바이너리는 임시(ad-hoc) 서명이라 Apple 공증 검사(`spctl`)는 통과하지 않는다. 대신 Homebrew가 formula에 고정된 sha256으로 내려받은 파일을 검증한다. 공증된 바이너리가 필요하면 GitHub 릴리스의 universal 압축본을 쓴다.
 - AXe를 부르는 곳은 ui 스크립트 하나로 모은다. 나중에 다른 도구로 바꿔도 이 스크립트만 고친다.
 - 출력은 build·test처럼 줄인다.
   - 접근성 트리 원본(시뮬레이터 홈 화면 기준 345KB, 요소 246개)은 파일로 남기고, 라벨·식별자·값이 있고 화면 안에 있는 요소만 한 줄씩 보여준다(같은 화면 22줄, 1KB).

@@ -109,7 +109,8 @@
 - 시뮬레이터의 접근성 트리 조회(`describe-ui`), 식별자·라벨로 탭, 텍스트 입력, 스크린샷, 여러 동작을 한 번에 실행(`batch`)하는 CLI다.
 - Cameron Cooke(XcodeBuildMCP 개발자)가 만들었다. MIT 라이선스, 2026-11 기준 스타 약 2.3k, 최신 릴리스 v1.8.0(2026-07-20).
 - Meta idb의 프레임워크(FBSimulatorControl 등)를 고정 리비전으로 빌드한다. Apple 비공개 API를 쓴다.
-- Homebrew tap으로 배포한다(`brew install cameroncooke/axe/axe`). 릴리스는 Developer ID 서명과 공증을 받는다. npm 패키지에 들어 있는 사본은 임시(ad-hoc) 서명만 돼 있었다.
+- Homebrew tap으로 배포한다(`brew install cameroncooke/axe/axe`). formula는 다운로드 URL과 sha256을 고정한다.
+- 서명: 릴리스 파이프라인은 universal 압축본에 Developer ID 서명과 공증을 한다. 하지만 Homebrew로 설치한 바이너리(1.8.0)와 npm 패키지에 들어 있는 사본은 둘 다 임시(ad-hoc) 서명만 돼 있었다(2026-11-08 `codesign`·`spctl`로 확인).
 - `describe-ui` 원본 JSON은 시뮬레이터 홈 화면 하나에 345KB였다. 그대로 넘기지 않고 요약해야 한다.
 - 반영: UI 확인(단위 10)의 화면 요소·탭·입력 도구(ADR 0005)
 
