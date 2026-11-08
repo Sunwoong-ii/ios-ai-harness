@@ -14,7 +14,7 @@ template 안의 경로가 그대로 프로젝트 루트 기준 경로가 된다.
 | `.claude/rules/harness/*.md` | 하네스가 관리하는 상황별 규칙 | 통째로 바꾼다 |
 | `.claude/rules/project/` | 프로젝트 고유 규칙을 두는 자리 (`.gitkeep`만 있음) | 건드리지 않는다 |
 | `.claude/settings.json` | 권한 규칙: 시크릿 읽기 deny, pbxproj 편집 deny, 파괴적·외부 공개 git 작업 ask | 프로젝트 설정과 합친다 (단위 9) |
-| `scripts/harness/*` | 프로젝트 스크립트(build·test·verify, lib.sh) | 통째로 바꾼다 |
+| `scripts/harness/*` | 프로젝트 스크립트(build·test·verify·run·ui, lib.sh) | 통째로 바꾼다 |
 | `.harness/.gitignore` | `.harness/`에서 설정 파일만 커밋되게 함 | 통째로 바꾼다 |
 
 `.harness/project.json`은 template에 없다. 설치할 때 하네스 저장소의 `scripts/detect`가 프로젝트를 보고 만들고, 이후에는 `detect --write --force`로만 다시 만든다.
@@ -51,4 +51,4 @@ MotoTrace에 적용하며 정한 방식이다.
    - 나머지 프로젝트 정보(소개, 구조, 작업 흐름)는 AGENTS.md 프로젝트 영역에 쓴다.
 3. CLAUDE.md를 `template/CLAUDE.md` 형태(`@AGENTS.md` import)로 바꾼다. 이 단계 전에는 Claude Code가 AGENTS.md를 읽지 않는다.
 4. 하네스가 대신하게 된 기존 장치(별도 검증 스크립트, 커밋 훅 등)는 지우고, 그 장치를 설명하던 문서도 고친다.
-5. 프로젝트 고유 스크립트가 빌드 결과를 찾는다면 하네스의 DerivedData를 보게 한다. 경로는 `scripts/harness/lib.sh`의 `harness_derived_data_path`로 얻는다.
+5. 프로젝트 고유 스크립트가 빌드 결과를 찾는다면 하네스의 DerivedData를 보게 한다. 경로는 `scripts/harness/lib.sh`의 `harness_derived_data_path`로 얻는다. 앱을 설치·실행하는 스크립트라면 `scripts/harness/run`을 쓰게 바꾸는 편이 낫다.

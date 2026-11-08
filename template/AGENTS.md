@@ -28,9 +28,11 @@
 | PR 전에 브랜치 전체 변경 검증 | `scripts/harness/verify --base <기본 브랜치>` |
 | 빌드만 | `scripts/harness/build` |
 | 앱 단위 테스트 / 특정 스킴 테스트 | `scripts/harness/test` / `scripts/harness/test --scheme <스킴>` |
+| 앱을 실행해 화면 확인 | `scripts/harness/run` → `scripts/harness/ui tree` · `tap` · `shot` |
 
 - 스킴, 시뮬레이터, 프로젝트 생성 명령은 `.harness/project.json`에 있고 스크립트가 이 파일을 읽는다. `xcodebuild`를 직접 구성하지 않는다.
 - 실패하면 출력에 나온 첫 에러의 위치부터 고친다. 전체 로그와 결과 번들은 `.harness/out/`에 있다.
+- 화면을 바꿨으면 앱을 실행해 확인한다. 절차는 `ios-ui-check` 스킬(ios-harness 플러그인)에 있고, 다른 에이전트는 `scripts/harness/ui --help`를 본다.
 - 결과는 실제로 실행한 명령과 출력으로 보고한다. 실행하지 못한 검증은 못 했다고 밝힌다.
 - PR을 만들기 전에는 `ios-reviewer` 서브에이전트(ios-harness 플러그인)에 변경 검토를 맡기고, 차단 항목을 고친 뒤 올린다.
 
