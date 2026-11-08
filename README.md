@@ -37,8 +37,8 @@ AI 코딩 에이전트(Claude Code, Codex 등)는 iOS 프로젝트에서 자주 
 | 계층 | 하는 일 | 이 저장소에서 |
 |---|---|---|
 | Context (가이드) | 행동하기 전에 알려준다 | `AGENTS.md`, 경로 규칙 |
-| Execution (실행 도구) | 에이전트가 일을 하는 손 | `scripts/harness/build`·`test`·`verify` |
-| Validation (센서) | 결과가 맞는지 판정한다 | 결정적: 빌드·테스트 결과 요약 / 추론적: `ios-reviewer` 코드 리뷰 |
+| Execution (실행 도구) | 에이전트가 일을 하는 손 | `scripts/harness/build`·`test`·`verify`·`run`·`ui` |
+| Validation (센서) | 결과가 맞는지 판정한다 | 결정적: 빌드·테스트 결과 요약, 화면 요소 확인 / 추론적: `ios-reviewer` 코드 리뷰 |
 | Enforcement (강제) | 모델 판단과 상관없이 막는다 | 생성 파일 편집 차단 훅, 권한 규칙 |
 | State (설정·상태) | 위 계층이 함께 쓰는 데이터 | `.harness/project.json`, 실패 기록 |
 
@@ -61,12 +61,12 @@ template/ ──────────────┴────────�
                                                     scripts/harness/*
                                                     .harness/.gitignore
 
-plugin/ ─────────── 플러그인으로 켬 (복사 안 함) ───▶ 훅, ios-reviewer
+plugin/ ─────────── 플러그인으로 켬 (복사 안 함) ───▶ 훅, ios-reviewer, ios-ui-check
                     (.claude/settings.local.json)
 ```
 
 - `template/`의 파일은 프로젝트에 **복사**된다. 프로젝트 저장소에 커밋되므로 사람·CI·다른 에이전트도 같은 스크립트를 쓴다.
-- `plugin/`은 **복사하지 않는다.** 프로젝트가 플러그인을 켜면 Claude Code가 이 저장소에서 바로 불러온다. 여러 프로젝트에 같은 훅과 리뷰어를 적용하기 위해서다.
+- `plugin/`은 **복사하지 않는다.** 프로젝트가 플러그인을 켜면 Claude Code가 이 저장소에서 바로 불러온다. 여러 프로젝트에 같은 훅·리뷰어·스킬을 적용하기 위해서다.
 - 프로젝트마다 다른 값은 `.harness/project.json` 하나에만 있다. 그래서 스크립트와 지침은 모든 프로젝트에서 글자 하나 다르지 않다.
 
 ## 동작 흐름
@@ -148,9 +148,31 @@ scripts/harness/test --scheme CoreTracking
 
 - 로그와 결과 번들은 `.harness/out/`, 생성 지문은 `.harness/state/`에 둔다. 둘 다 git이 무시한다.
 - DerivedData는 `~/Library/Developer/Xcode/DerivedData/<워크트리 이름>-harness-<경로 해시>`에 둔다. 프로젝트가 `~/Desktop` 같은 macOS 보호 폴더 아래 있으면 시뮬레이터가 테스트 번들을 읽지 못해서다.
-- 종료 코드: 성공 0, 빌드·테스트 실패는 xcodebuild의 코드(보통 65), 설정·인자 오류 2
+- 종료 코드: 성공 0, 빌드·테스트 실패는 xcodebuild의 코드(보통 65), 화면 조작(run·ui) 실패 1, 설정·인자 오류 2
 
-### 5. 막는 장치: 훅과 권한 규칙
+### 5. 화면 확인: run · ui
+
+빌드와 테스트는 화면이 의도대로 나오는지 알려주지 않는다. 화면을 바꿨으면 에이전트가 앱을 실행해 직접 본다. 절차는 플러그인 스킬 `ios-ui-check`에 있다.
+
+```bash
+scripts/harness/run                       # 빌드 → 시뮬레이터 부팅 → 설치 → 실행
+scripts/harness/ui tree                   # 화면 요소를 한 줄씩
+scripts/harness/ui tap --id loginButton   # 접근성 식별자로 누르기
+scripts/harness/ui shot 로그인             # 스크린샷 (1200px JPEG)
+```
+
+```
+· 화면 요소 9개 · 원본: .harness/out/ui/tree.json
+  StaticText "아직 기록된 투어가 없습니다" @111,456 178x19
+  RadioButton "History" #clock.arrow… =1 @197,795 94x54
+```
+
+- run은 항상 빌드부터 한다. 고치기 전의 빌드를 띄워 확인하는 실수를 막기 위해서다.
+- 화면 요소는 앱이 VoiceOver에 알려주는 접근성 정보(라벨·식별자·값·위치)다. 원본은 화면 하나에 수백 KB라서 요소마다 한 줄로 줄여 보여준다.
+- 좌표 대신 식별자나 라벨로 누른다. 기기 크기와 레이아웃이 바뀌어도 그대로 동작한다.
+- 화면 요소 읽기·탭·입력은 AXe(`brew install cameroncooke/axe/axe`)를 쓴다. 실행과 스크린샷은 Xcode의 `simctl`만 쓴다. 고른 이유는 [ADR 0005](docs/decisions/0005-ui-observation.md)에 있다.
+
+### 6. 막는 장치: 훅과 권한 규칙
 
 모델이 지침을 잊어도 위험하거나 되돌리기 어려운 행동은 막는다. 왜 이렇게 나눴는지는 [ADR 0004](docs/decisions/0004-enforcement.md)에 있다.
 
@@ -164,7 +186,7 @@ scripts/harness/test --scheme CoreTracking
 - 훅은 판단할 수 없으면(설정 파일 없음, 입력 오류) 막지 않는다. 실수를 줄이는 장치이지 보안 경계가 아니라서, 고장 난 훅이 정상 작업을 막으면 안 된다.
 - "검증을 돌렸는지 확인하는 게이트" 같은 장치는 일부러 넣지 않았다. 그런 실패가 실제로 관찰되면 그때 넣는다.
 
-### 6. 리뷰: ios-reviewer
+### 7. 리뷰: ios-reviewer
 
 PR을 만들기 전에 메인 에이전트가 플러그인의 서브에이전트 `ios-reviewer`에게 변경 검토를 맡긴다.
 
@@ -178,7 +200,7 @@ PR을 만들기 전에 메인 에이전트가 플러그인의 서브에이전트
 - Claude Code 안에서 도는 서브에이전트다. 메인 세션과 같은 모델을 쓰고(`model: inherit`), Codex를 부르지 않는다.
 - Codex로 하는 리뷰(예: Codex 플러그인의 `/codex:review`)와는 별개다. 프로젝트가 원하면 둘을 함께 쓸 수 있지만, Codex 리뷰는 하네스에 포함되지 않는다.
 
-### 7. 개선: 같은 실수는 한 번만
+### 8. 개선: 같은 실수는 한 번만
 
 시험장에서 에이전트가 실패하면 [docs/harness-log.md](docs/harness-log.md)에 기록한다. 그리고 [docs/principles.md](docs/principles.md)의 기준표에 따라 알맞은 층을 고친다.
 반복되는 실수일수록 강한 수단으로 옮긴다: 문장 지침 → 경로 규칙 → 스크립트가 딸린 스킬 → 린트·테스트 → 훅·권한.
@@ -216,7 +238,9 @@ template 안의 경로가 그대로 대상 프로젝트 루트 기준 경로가 
 | `scripts/harness/build` | Execution + Validation | 빌드하고 첫 에러를 요약한다 |
 | `scripts/harness/test` | Execution + Validation | 테스트하고 실패만 요약한다 |
 | `scripts/harness/verify` | Execution + Validation | 바뀐 파일로 대상을 정해 빌드와 테스트를 한 번에 돌린다 |
-| `scripts/harness/lib.sh` | Execution | 세 스크립트의 공용 함수: 설정 읽기, 시뮬레이터 찾기, 생성 지문, DerivedData 경로, `xcresulttool` 결과 정리 |
+| `scripts/harness/run` | Execution | 빌드하고 시뮬레이터에 설치해 실행한다 |
+| `scripts/harness/ui` | Execution + Validation | 화면 요소 요약, 스크린샷, 탭, 입력 |
+| `scripts/harness/lib.sh` | Execution | 스크립트들의 공용 함수: 설정 읽기, 시뮬레이터 찾기·부팅, 생성 지문, DerivedData 경로, `xcresulttool` 결과 정리, 앱 경로, 화면 요소 요약 |
 | `.harness/.gitignore` | State | `.harness/`에서 `project.json`만 커밋되게 한다 |
 
 ### plugin/ — Claude Code 플러그인 ios-harness
@@ -229,6 +253,7 @@ template 안의 경로가 그대로 대상 프로젝트 루트 기준 경로가 
 | `hooks/hooks.json` | Enforcement | Edit·Write·MultiEdit·NotebookEdit 직전에 `protect-generated.sh`를 실행하도록 등록 |
 | `hooks/protect-generated.sh` | Enforcement | 생성 파일·pbxproj 편집을 막는 훅 |
 | `agents/ios-reviewer.md` | Validation (추론적) | 읽기 전용 리뷰 서브에이전트의 지시문 |
+| `skills/ios-ui-check/SKILL.md` | Validation | 화면을 바꾼 뒤 앱을 실행해 확인하는 절차 |
 
 ### scripts/ — 하네스를 설치하는 도구
 
@@ -252,6 +277,7 @@ template 안의 경로가 그대로 대상 프로젝트 루트 기준 경로가 
 | `verify.test.sh` | test·verify의 공용 함수(실패 요약 등)와 verify의 실행 계획: 바뀐 파일 → 모듈 → 돌릴 테스트 |
 | `hooks.test.sh` | 훅이 막을 것만 막고, 판단할 수 없으면 통과시키는지 |
 | `dev-install.test.sh` | 파일 배치, AGENTS.md 관리 블록 교체, 설정 병합, 반복 실행 |
+| `ui.test.sh` | run·ui와 그 공용 함수: 앱 경로 찾기, 화면 요소 요약 규칙, AXe 확인, 실패 안내 |
 
 ### docs/ — 설계 문서
 
@@ -261,14 +287,15 @@ template 안의 경로가 그대로 대상 프로젝트 루트 기준 경로가 
 | `principles.md` | 하네스 계층, 설계 원칙, 실수를 어느 층에서 고칠지 정한 기준표, 용어 |
 | `references.md` | 레퍼런스 조사 요약, 플랫폼 제약, 로컬 환경, 출처 |
 | `project-config.md` | `.harness/project.json` 필드 스펙과 detect가 값을 찾는 방법 |
-| `scripts.md` | build·test·verify의 출력 형식, 산출물 위치, 생성 판단 |
+| `scripts.md` | build·test·verify·run·ui의 출력 형식, 산출물 위치, 생성 판단, 프로젝트 시나리오 만드는 법 |
 | `template.md` | template 파일이 어디에 설치되고 어떻게 갱신되는지, 기존 지침이 있는 프로젝트에 적용하는 절차 |
-| `plugin.md` | 플러그인 구성, 훅이 막는 것, 리뷰어 동작, 프로젝트에서 켜는 방법 |
+| `plugin.md` | 플러그인 구성, 훅이 막는 것, 리뷰어·스킬 동작, 프로젝트에서 켜는 방법 |
 | `harness-log.md` | 시험장에서 관찰한 에이전트 실패와 그에 따른 수정 |
 | `decisions/0001-layers.md` | 다섯 계층과 산출물 위치(template·plugin·scripts)를 나눈 이유 |
 | `decisions/0002-rule-placement.md` | 규칙을 무엇에 붙는지(파일 종류 / 행동)에 따라 경로 규칙·AGENTS.md·스킬·권한으로 나누는 기준 |
 | `decisions/0003-agents-md-areas.md` | AGENTS.md를 프로젝트 영역과 관리 블록으로 나누고 명령 블록을 고정 문장으로 둔 이유 |
 | `decisions/0004-enforcement.md` | 무엇을 훅으로, 무엇을 deny·ask로 막는지 |
+| `decisions/0005-ui-observation.md` | 앱 화면 확인 도구로 AXe와 simctl을 고른 이유 |
 
 ## 설치하면 대상 프로젝트는 이렇게 된다
 
@@ -279,7 +306,7 @@ MyApp/
 ├── .harness/
 │   ├── .gitignore                 project.json만 커밋
 │   ├── project.json               프로젝트 설정 파일 (detect 초안 → 사람이 확인)
-│   ├── out/                       마지막 실행의 로그·결과 번들 (무시됨)
+│   ├── out/                       마지막 실행의 로그·결과 번들, ui/ 화면 요소·스크린샷 (무시됨)
 │   └── state/                     생성 지문 (무시됨)
 ├── .claude/
 │   ├── settings.json              권한 규칙 (기존 설정과 합침)
@@ -288,7 +315,7 @@ MyApp/
 │       ├── harness/*.md           하네스 경로 규칙 (하네스가 관리)
 │       └── project/*.md           프로젝트 고유 규칙 (프로젝트가 관리)
 └── scripts/harness/
-    ├── build, test, verify
+    ├── build, test, verify, run, ui
     └── lib.sh
 ```
 
@@ -313,12 +340,13 @@ claude plugin validate plugin
 - `bash tests/run.sh`: 회귀 테스트 전체. Xcode 없이 돈다.
 - `scripts/detect`: 설정 파일 초안을 출력만 한다. 파일은 쓰지 않는다.
 - `scripts/dev-install`: 실제로 설치한다. 설치한 뒤 출력된 "직접 할 일"을 처리하고, 프로젝트에서 `scripts/harness/verify`를 돌려 본다.
-- 필요한 도구: macOS 기본 bash·jq, Xcode(빌드·테스트), 해당 프로젝트의 생성기(Tuist 등)
+- 필요한 도구: macOS 기본 bash·jq, Xcode(빌드·테스트), 해당 프로젝트의 생성기(Tuist 등). 화면 요소 읽기·탭·입력에는 AXe가 필요하다(선택)
 
 ## 진행 상황
 
 - 단위 1~8 완료: 저장소 구조, 프로젝트 설정 파일·detect, build·test·verify, 경로 규칙, AGENTS.md 템플릿, 훅·권한·플러그인, ios-reviewer
-- 단위 9 진행 중: MotoTrace에 설치를 마쳤고, 1~2주 운영하며 실패를 기록하는 중이다. 이 기록으로 이후 순서를 정한다.
-- 이후 후보: UI 확인, 빌드·Tuist 스킬, 워크플로 스킬, 플러그인 배포와 init/sync/doctor, 두 번째 프로젝트 적용, Codex 어댑터, 평가 등
+- 단위 9 진행 중: MotoTrace에 설치를 마쳤다. 단위 10을 먼저 하고 운영을 이어 간다. 이 기록으로 이후 순서를 정한다.
+- 단위 10 진행 중: 앱을 실행해 화면을 확인하는 run·ui와 `ios-ui-check` 스킬
+- 이후 후보: 빌드·Tuist 스킬, 워크플로 스킬, 플러그인 배포와 init/sync/doctor, 두 번째 프로젝트 적용, Codex 어댑터, 평가 등
 
 자세한 내용은 [docs/roadmap.md](docs/roadmap.md)에 있다. 이 저장소에 기여하는 방법(브랜치, 커밋 규칙)은 [AGENTS.md](AGENTS.md)에 있다.
