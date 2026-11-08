@@ -49,10 +49,10 @@
 | `project` | 경로 또는 `null` | 빌드할 `.xcodeproj`. `workspace`와 `project` 중 하나만 값을 가진다 |
 | `app.scheme` | 문자열 | 앱을 빌드하는 스킴 |
 | `app.path` | 경로 또는 `null` | 앱 manifest가 있는 디렉터리(Tuist). 이 안의 파일은 앱의 변경으로 본다 |
-| `app.bundleId` | 문자열 또는 `null` | Debug 구성의 앱 번들 ID. 시뮬레이터에서 앱을 실행할 때 쓴다 |
+| `app.bundleId` | 문자열 또는 `null` | Debug 구성의 앱 번들 ID. 참고용이다. run은 빌드된 앱의 Info.plist에서 번들 ID를 읽는다 |
 | `app.unitTestTargets` | 문자열 배열 | 앱이 바뀌었을 때 돌릴 단위 테스트 타깃. UI 테스트는 넣지 않는다 |
 | `destination.simulator` | 문자열 | 빌드·테스트에 쓸 시뮬레이터 기기 이름 |
-| `destination.os` | `latest` 또는 버전 | 시뮬레이터 OS 버전 |
+| `destination.os` | `latest` 또는 버전 | 시뮬레이터 OS 버전. `latest`는 설치된 런타임 중 `destination.simulator` 기기가 있는 가장 최신 버전이다. `26`처럼 주 버전만 쓰면 그 안에서 가장 최신이다 |
 | `modules` | 객체 또는 `null` | 모듈을 찾는 규칙. 모듈 구조가 없으면 `null`이다 |
 | `modules.manifest` | 파일 이름 | 이 파일이 있는 디렉터리를 모듈 하나로 본다 |
 | `modules.scheme` | 규칙 문자열 | 모듈 테스트를 돌릴 스킴 이름. `{dir}`은 모듈 디렉터리 이름이다 |
@@ -83,5 +83,6 @@ scripts/detect --write ~/path/to/app   # <프로젝트>/.harness/project.json에
   - pbxproj 내용: `plutil`로 JSON 변환
   - 생성된 워크스페이스가 있으면 `xcodebuild -list`, `-showBuildSettings`로 스킴과 번들 ID를 확인한다
   - `xcrun simctl`: 가장 최신 iOS 런타임의 iPhone을 고른다(Pro 모델 우선)
+- 기기 이름은 iOS 버전마다 다르다. 예를 들어 iOS 27.2 런타임에는 iPhone 17 Pro가 없고 iPhone 18 Pro부터 있다. 그래서 `latest`로 두어도 설정한 기기가 없는 새 런타임은 쓰지 않는다. 새 OS에서 돌리려면 그 런타임에 있는 기기로 이름을 바꾼다.
 - Tuist 프로젝트를 아직 생성하지 않았으면 스킴과 번들 ID를 확인할 수 없다. 이 경우 추정값을 쓰거나 `null`로 두고, 경고를 출력한다.
 - `HARNESS_OFFLINE=1`을 주면 xcodebuild·simctl을 부르지 않고 파일만 본다(테스트용). 이때 시뮬레이터 이름은 `HARNESS_SIMULATOR`에서 읽는다.
