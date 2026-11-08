@@ -330,12 +330,18 @@ format_test_failures() {
 }
 
 # 테스트 트리 JSON(stdin, xcresulttool get test-results tests)에서 실패한 테스트의
-# 실패 메시지를 최대 $1개 "테스트ID<TAB>메시지"로 출력한다. 메시지는 보통 "File.swift:42: ..." 형태다.
+# 실패 메시지를 최대 $1개 "테스트ID<TAB>위치: 메시지"로 출력한다. 위치는 "경로:줄" 형태다.
+# - Xcode 26까지: 위치가 메시지 앞에 붙어 있다("File.swift:42: ..."). 파일 이름만 있다.
+# - Xcode 27부터: 메시지에는 위치가 없고 sourceLocation(절대 경로, 줄 번호)에 따로 있다.
 failed_test_messages() {
   jq -r --argjson max "${1:-5}" '
     [ .. | objects | select(.nodeType? == "Test Case" and .result? == "Failed")
       | (.nodeIdentifier // .name) as $id
-      | ([ .children[]? | select(.nodeType == "Failure Message") | .name ] | if length == 0 then [""] else . end)[]
+      | ([ .children[]? | select(.nodeType == "Failure Message")
+           | if .sourceLocation.filePath? then
+               "\(.sourceLocation.filePath):\(.sourceLocation.lineNumber // 0): \(.name)"
+             else .name end ]
+         | if length == 0 then [""] else . end)[]
       | "\($id)\t\(split("\n")[0] // "")" ]
     | .[:$max][]'
 }
@@ -353,7 +359,7 @@ resolve_source_path() {
 
 # 실패한 테스트를 "경로:줄: 메시지"와 테스트 ID로 출력한다. 위치를 못 찾으면 요약의 실패 문구를 쓴다.
 harness_print_test_failures() { # 결과번들 요약JSON
-  local tests lines re id msg
+  local tests lines re id msg path
   tests="$(xcrun xcresulttool get test-results tests --path "$1" --compact 2>/dev/null || true)"
   lines=""
   if [ -n "$tests" ]; then lines="$(printf '%s' "$tests" | failed_test_messages "$max_errors")"; fi
@@ -364,7 +370,14 @@ harness_print_test_failures() { # 결과번들 요약JSON
   re='^([^:]+\.swift):([0-9]+): (.*)$'
   while IFS=$'\t' read -r id msg; do
     if [[ $msg =~ $re ]]; then
-      echo "  $(resolve_source_path "${BASH_REMATCH[1]}"):${BASH_REMATCH[2]}: ${BASH_REMATCH[3]}"
+      path="${BASH_REMATCH[1]}"
+      # 절대 경로(Xcode 27)는 루트 기준으로 줄이고, 파일 이름만 있으면(Xcode 26) git이 아는 파일에서 찾는다.
+      case "$path" in
+        "$root"/*) path="${path#"$root"/}" ;;
+        /*) ;;
+        *) path="$(resolve_source_path "$path")" ;;
+      esac
+      echo "  $path:${BASH_REMATCH[2]}: ${BASH_REMATCH[3]}"
     elif [ -n "$msg" ]; then
       echo "  $msg"
     fi
