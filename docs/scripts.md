@@ -10,7 +10,7 @@
 
   | 경로 | 내용 |
   |---|---|
-  | `.harness/out/` | 마지막 실행의 로그(`*.log`)와 결과 번들(`*.xcresult`). 실행할 때마다 덮어쓴다 |
+  | `.harness/out/` | 마지막 실행의 로그(`*.log`)와 결과 번들(`*.xcresult`). 실행할 때마다 덮어쓴다. test는 스킴마다 따로 남긴다(`test-<스킴>.log`) |
   | `.harness/state/` | 다음 실행이 참고하는 로컬 상태(생성 입력 지문 등) |
   | `~/Library/Developer/Xcode/DerivedData/<워크트리 이름>-harness-<경로 해시>` | 이 워크트리 전용 DerivedData. `HARNESS_DERIVED_DATA`로 바꿀 수 있다 |
 

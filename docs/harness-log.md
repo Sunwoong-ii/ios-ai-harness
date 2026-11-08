@@ -18,6 +18,38 @@
 
 ## 기록
 
+### 2026-11-04 — git에 있는 파일을 `rm`으로 지우면 generate를 건너뛴다
+- 프로젝트·작업: MotoTrace 시험장의 `.harness/state/generate.fingerprint`를 설명하다가 코드에서 발견. 임시 git 저장소에서 재현했다.
+- 무슨 일이 있었나
+  - 생성 입력 지문은 `git ls-files -co`로 만든 파일 목록을 쓴다. `-c`는 작업 트리가 아니라 git 인덱스를 본다.
+  - 그래서 커밋된 `B.swift`를 `git rm` 없이 `rm`으로 지우면 목록에 그대로 남고, 지문이 바뀌지 않았다.
+  - 그러면 generate를 건너뛰고, 생성된 프로젝트가 지운 파일을 계속 참조해 빌드가 실패한다. 에이전트는 보통 `rm`으로 지운다.
+  - 회귀 테스트의 "파일이 삭제되면 다시 실행"은 git에 추가하지 않은 파일만 지워서 이 경우를 놓쳤다.
+- 원인: Execution — 파일 목록이 작업 트리가 아니라 인덱스 기준이었다.
+- 조치
+  - 지문을 만들 때 작업 트리에 실제로 있는 파일만 목록에 넣는다. MotoTrace(파일 170개)에서 지문 계산 시간은 445ms → 458ms로 차이가 거의 없다.
+  - "git에 있는 파일을 rm으로 지워도 다시 실행" 테스트를 추가했다.
+- 상태: 반영됨 (feature/unit-9-test-log-path)
+
+### 2026-11-04 — verify가 여러 스킴을 테스트하면 앞서 실패한 스킴의 로그가 덮어써진다
+- 프로젝트·작업: MotoTrace 시험장, 하네스 설치 뒤 `scripts/harness/verify --all` 실행 (앱 빌드 + 테스트 8묶음, 235초)
+- 무슨 일이 있었나
+  - FeatureHistory 테스트가 빌드 에러로 멈췄고, 출력은 `로그: .harness/out/test.log`, `결과: .harness/out/test.xcresult`를 가리켰다.
+  - verify가 이어서 FeatureSettings·FeatureTour·HistoryDetail을 테스트하면서 같은 경로에 덮어썼다.
+  - 실행이 끝난 뒤 `test.log`에는 FeatureHistory 에러(`Cannot find 'HistoryFeatureBuilder' in scope`)가 없고, 마지막 HistoryDetail의 로그만 남았다. 출력이 안내한 로그를 열면 다른 스킴의 결과를 보게 된다.
+- 원인: Execution — test의 산출물 경로가 스킴과 상관없이 하나(`test.log`, `test.xcresult`)였다. 단독 실행에서는 문제가 없지만 verify처럼 연달아 부르면 마지막 실행만 남는다.
+- 조치: test 산출물 이름에 스킴을 넣는다(`test-<스킴>.log`, `test-<스킴>.xcresult`).
+- 상태: 반영됨 (feature/unit-9-test-log-path)
+
+### 2026-11-04 — 테스트 함수가 없는 모듈도 verify가 테스트를 실행한다
+- 프로젝트·작업: MotoTrace 시험장, 같은 `verify --all` 실행
+- 무슨 일이 있었나
+  - FeatureSettings·FeatureTour는 `Tests/Sources`에 빈 `Keep.swift`만 있다. 스킴에는 테스트 대상이 등록돼 있어서 verify가 테스트할 모듈로 판단했다.
+  - 두 모듈 모두 `✓ test … · 실행된 테스트 없음`으로 끝났고, 각각 24초·29초가 걸렸다(전체 235초 중 53초).
+- 원인: Execution — "스킴에 테스트 대상이 있으면 테스트가 있다"는 판단은 테스트 타깃의 존재까지만 본다. 테스트 함수가 있는지는 보지 않는다.
+- 조치: 보류. 결과가 틀리지는 않고(실패로 보고하지 않음) 시간만 든다. 테스트 함수를 세려면 XCTest·Swift Testing 소스를 파싱해야 해서 판단 규칙이 복잡해진다. 기본 실행은 바뀐 모듈만 테스트하므로 `--all`이 아니면 영향이 작다. 대기 시간이 실제로 불편해지면 다시 본다.
+- 상태: 보류
+
 ### 2026-10-21 — 리뷰어가 "규칙 파일을 먼저 읽으라"는 지시를 따르지 않았다
 - 프로젝트·작업: MotoTrace 시험장, 단위 8 `ios-reviewer` 확인 (위반 4종을 넣고 터미널 `claude -p`로 리뷰를 맡김)
 - 무슨 일이 있었나

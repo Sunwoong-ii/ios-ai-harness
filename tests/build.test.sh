@@ -69,19 +69,25 @@ assert_eq "generate: 실행하면 generated_now=1" "1" "$generated_now"
 
 rm "$p/Sources/B.swift"
 harness_ensure_generated
-assert_eq "generate: 파일이 삭제되면 다시 실행" "3" "$(calls generate-calls)"
+assert_eq "generate: git에 없는 파일이 삭제되면 다시 실행" "3" "$(calls generate-calls)"
+
+# git rm 없이 지운 파일은 인덱스에 남아 있다. 그래도 삭제로 봐야 한다.
+(cd "$p" && git add Sources/A.swift)
+rm "$p/Sources/A.swift"
+harness_ensure_generated
+assert_eq "generate: git에 있는 파일을 rm으로 지워도 다시 실행" "4" "$(calls generate-calls)"
 
 echo 'let project = Project(name: "Changed")' > "$p/Project.swift"
 harness_ensure_generated
-assert_eq "generate: manifest가 바뀌면 다시 실행" "4" "$(calls generate-calls)"
+assert_eq "generate: manifest가 바뀌면 다시 실행" "5" "$(calls generate-calls)"
 assert_eq "install: 의존성 선언이 그대로면 다시 실행하지 않는다" "1" "$(calls install-calls)"
 
 harness_ensure_generated force
-assert_eq "generate: force면 항상 실행" "5" "$(calls generate-calls)"
+assert_eq "generate: force면 항상 실행" "6" "$(calls generate-calls)"
 
 rm -rf "$p/App.xcworkspace"
 harness_ensure_generated
-assert_eq "generate: 생성물이 없으면 다시 실행" "6" "$(calls generate-calls)"
+assert_eq "generate: 생성물이 없으면 다시 실행" "7" "$(calls generate-calls)"
 
 jq '.commands.generate = "echo boom; exit 3"' "$p/.harness/project.json" > "$work/c.json" && mv "$work/c.json" "$p/.harness/project.json"
 if out="$(harness_ensure_generated force)"; then code=0; else code=$?; fi
