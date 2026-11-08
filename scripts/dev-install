@@ -231,6 +231,11 @@ if git -C "$target_project_dir" rev-parse --git-dir > /dev/null 2>&1 \
     "이 저장소의 절대 경로가 들어 있으니 .gitignore에 추가한다"
 fi
 
+# 화면 요소 읽기·탭·입력(scripts/harness/ui)에는 AXe가 필요하다. 설치는 사람이 정한다(ADR 0005).
+if [ -z "${HARNESS_AXE:-}" ] && ! command -v axe > /dev/null 2>&1; then
+  todo "AXe가 없다. 화면 요소 읽기·탭·입력(scripts/harness/ui)에 필요하다: brew install cameroncooke/axe/axe"
+fi
+
 # --- 결과 ---------------------------------------------------------------------
 
 if [ -z "$changes" ]; then

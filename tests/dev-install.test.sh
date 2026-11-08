@@ -44,6 +44,11 @@ assert_eq "fresh: 프로젝트 영역을 채우라고 알린다" "yes" "$ok"
 
 assert_eq "fresh: 두 번째 실행은 바뀐 것이 없다" "✓ dev-install · 바뀐 것 없음 · $p" "$("$install" "$p" | head -1)"
 
+# AXe는 Homebrew(/opt/homebrew/bin 등)에 설치된다. PATH를 기본 경로로 좁혀 없는 상황을 만든다.
+axe_todo() { printf '%s\n' "$1" | grep -c 'AXe가 없다' || true; }
+assert_eq "axe: 없으면 설치 명령을 알린다" "1" "$(axe_todo "$(PATH=/usr/bin:/bin "$install" "$p")")"
+assert_eq "axe: 있으면 알리지 않는다" "0" "$(axe_todo "$(HARNESS_AXE=/usr/bin/true "$install" "$p")")"
+
 # --- 관리 블록이 있는 AGENTS.md: 프로젝트 영역은 지키고 블록만 바꾼다 --------------------------
 printf '%s\n' '# Sample' '' '우리 프로젝트 소개' '<!-- harness:begin 옛날 -->' '옛 블록' '<!-- harness:end -->' '' '블록 뒤 프로젝트 메모' > "$p/AGENTS.md"
 "$install" "$p" > /dev/null
