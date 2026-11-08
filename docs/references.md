@@ -101,7 +101,17 @@
 - 2026-09-23 v2.7.1부터 이름이 MobileBuildMCP로 바뀌었다. npm의 `xcodebuildmcp` 패키지는 2.7.0에서 멈췄다.
 - 세션 기본값은 설정 파일에 둔다. CLI 사용법을 알려주는 스킬을 함께 제공한다.
 - Sentry 텔레메트리가 기본으로 켜져 있다.
-- 반영: UI 확인(후보 10)에서 쓸 때는 버전을 고정하고 래퍼로 감싼다.
+- UI 자동화는 내부에서 AXe를 쓴다. npm 2.7.0 패키지에 AXe 1.8.0 바이너리가 들어 있다.
+- 반영: UI 확인(단위 10)에서는 쓰지 않고 AXe를 직접 쓴다(ADR 0005).
+
+### AXe
+
+- 시뮬레이터의 접근성 트리 조회(`describe-ui`), 식별자·라벨로 탭, 텍스트 입력, 스크린샷, 여러 동작을 한 번에 실행(`batch`)하는 CLI다.
+- Cameron Cooke(XcodeBuildMCP 개발자)가 만들었다. MIT 라이선스, 2026-11 기준 스타 약 2.3k, 최신 릴리스 v1.8.0(2026-07-20).
+- Meta idb의 프레임워크(FBSimulatorControl 등)를 고정 리비전으로 빌드한다. Apple 비공개 API를 쓴다.
+- Homebrew tap으로 배포한다(`brew install cameroncooke/axe/axe`). 릴리스는 Developer ID 서명과 공증을 받는다. npm 패키지에 들어 있는 사본은 임시(ad-hoc) 서명만 돼 있었다.
+- `describe-ui` 원본 JSON은 시뮬레이터 홈 화면 하나에 345KB였다. 그대로 넘기지 않고 요약해야 한다.
+- 반영: UI 확인(단위 10)의 화면 요소·탭·입력 도구(ADR 0005)
 
 ### Xcode MCP (Xcode 26.3 이상)
 
@@ -120,6 +130,10 @@
   - `c-bounds-safety`
   - `device-interaction`
 - 이 스킬들은 Agent Skills 표준 형식이라, 내보내서 다른 에이전트에서도 쓸 수 있다.
+- 2026-09-14 정식 출시, 2026-10 27.1이 나왔다고 보도됐다(2차 출처).
+- `device-interaction`은 스크린샷, UI 계층, 터치로 앱 동작을 확인하는 서브에이전트용 스킬이다.
+  - Xcode 27이 실행 중이고 프로젝트가 열려 있어야 한다. 처음 쓸 때 Xcode에서 에이전트 접근을 승인한다. 시뮬레이터는 27.0 이상이다.
+  - Claude Code에서는 `xcrun agent plugin path --plugin-format claude`로 만든 플러그인으로 쓴 사례가 있다.
 - 반영
   - 지식 큐레이션(후보 18)
   - Xcode 27 어댑터(백로그)
@@ -216,9 +230,13 @@
 - [steipete/agent-scripts](https://github.com/steipete/agent-scripts)
 - [Sentry — Do you really need an MCP to build your app?](https://blog.sentry.io/do-you-really-need-an-mcp-to-build-your-app)
 - [getsentry/MobileBuildMCP](https://github.com/getsentry/MobileBuildMCP)
+- [cameroncooke/AXe](https://github.com/cameroncooke/AXe)
 - [Xcode 26.3 MCP 도구 정리 (DEV)](https://dev.to/arshtechpro/xcode-263-use-ai-agents-from-cursor-claude-code-beyond-4dmi)
 - [Apple Newsroom — WWDC26 개발 도구 발표](https://www.apple.com/newsroom/2026/06/apple-aids-app-development-with-new-intelligence-frameworks-and-advanced-tools/)
 - [Xcode 27 Apple 스킬 정리 (DEV)](https://dev.to/arshtechpro/wwdc-2026-xcode-27-ships-with-apples-own-agent-skills-what-they-are-and-how-to-use-them-3g2)
+- [Xcode 27 출시 정리 (Blake Crosley)](https://blakecrosley.com/blog/xcode-27-release)
+- [Classmethod — Xcode 27 공식 스킬을 Claude Code에서 써 보기](https://dev.classmethod.jp/en/articles/xcode-agent-skills-claude-code/)
+- [avanderlee — Xcode 27 에이전트 스킬을 Claude·Codex·Cursor에서 쓰기](https://www.avanderlee.com/ai-development/using-xcode-27s-agent-skills-in-claude-codex-and-cursor/)
 - [CharlesWiltgen/Axiom](https://github.com/CharlesWiltgen/Axiom)
 - [twostraws/Swift-Agent-Skills](https://github.com/twostraws/swift-agent-skills)
 - [Hacking with Swift — Agent skills in Xcode](https://www.hackingwithswift.com/articles/283/how-to-install-and-use-ai-agent-skills-in-xcode)
