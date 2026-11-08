@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# 실행 중인 시뮬레이터의 화면을 읽고 조작한다. 앱 실행은 scripts/harness/run으로 한다.
+set -euo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/lib.sh"
+
+usage() {
+  cat <<'EOF'
+사용법: scripts/harness/ui <명령>
+
+  run으로 실행한 시뮬레이터의 화면을 읽고 조작한다.
+  화면 이동은 좌표 대신 접근성 식별자(#)나 라벨("")로 한다.
+
+  tree                 화면 요소를 한 줄씩 보여준다: 타입 "라벨" #식별자 =값 @x,y 너비x높이
+  shot [이름]           스크린샷을 .harness/out/ui/<시각>-<이름>.jpg로 저장한다
+  tap --id 식별자       접근성 식별자로 요소를 찾아 누른다 (나타날 때까지 최대 5초 기다린다)
+  tap --label 라벨      접근성 라벨로 요소를 찾아 누른다
+  type 텍스트           입력란에 붙여 넣는다. 먼저 입력란을 누른다. 한글도 된다 (시뮬레이터 클립보드를 쓴다)
+
+  tree·tap·type은 AXe가 필요하다: brew install cameroncooke/axe/axe
+
+산출물 (.harness/out/ui/): tree.json(화면 요소 원본), 스크린샷. run을 실행하면 비워진다.
+EOF
+}
+
+[ $# -ge 1 ] || { usage >&2; exit 2; }
+cmd="$1"
+shift
+case "$cmd" in
+  -h|--help) usage; exit 0 ;;
+  tree|shot|tap|type) ;;
+  *) echo "ui: 알 수 없는 명령: $cmd" >&2; usage >&2; exit 2 ;;
+esac
+
+harness_init
+harness_destination
+ui_dir="$out_dir/ui"
+err="$ui_dir/last-error.log"
+mkdir -p "$ui_dir"
+if [ "$(simulator_state "$simulator_udid")" != Booted ]; then
+  harness_die "시뮬레이터($destination_label)가 꺼져 있습니다. scripts/harness/run으로 앱을 먼저 실행하세요"
+fi
+
+# 실패를 요약하고 끝낸다. 도구의 에러 메시지는 첫 문장만 보여준다.
+fail() { # 제목 [안내]
+  echo "✗ ui $1 실패"
+  { grep -E '^Error:' "$err" || tail -n 5 "$err"; } | head -n 3 | sed -E 's/^Error: //; s/\. .*$/./; s/^/  /' || true
+  if [ -n "${2:-}" ]; then echo "  $2"; fi
+  exit 1
+}
+
+# AXe를 부른다. 에러는 $err에 남는다.
+# 시뮬레이터에 처음 연결할 때 연결 생성이 실패하는 일이 있다(iOS 27.2: "Timed out creating the simulator
+# remote automation session", iOS 26.3: "No translation object returned"). 이때는 아무 동작도 하지 않았으니
+# 2초 간격으로 두 번 더 시도한다. 요소를 못 찾는 것처럼 다른 실패는 다시 시도하지 않는다.
+axe_run() {
+  local attempt=1
+  while ! "$axe" "$@" 2> "$err"; do
+    if [ "$attempt" -ge 3 ] || ! grep -qE 'remote automation session|No translation object' "$err"; then
+      return 1
+    fi
+    attempt=$((attempt + 1))
+    sleep "${HARNESS_AXE_RETRY_DELAY:-2}"
+  done
+}
+
+ui_tree() {
+  local raw="$ui_dir/tree.json" summary count max=200
+  [ $# -eq 0 ] || harness_die "tree는 인자를 받지 않습니다"
+  harness_require_axe
+  axe_run describe-ui --udid "$simulator_udid" > "$raw" || fail tree
+  summary="$(summarize_ui_tree < "$raw")"
+  count="$(printf '%s' "$summary" | grep -c '' || true)"
+  echo "· 화면 요소 ${count}개 · 원본: ${raw#$root/}"
+  printf '%s\n' "$summary" | head -n "$max" | sed '/^$/d; s/^/  /'
+  if [ "$count" -gt "$max" ]; then echo "  … $((count - max))개 더 있음 (원본 파일 참고)"; fi
+}
+
+ui_shot() {
+  local name="${1:-shot}" png dest
+  [ $# -le 1 ] || harness_die "shot은 이름 하나만 받습니다"
+  name="${name//[\/ ]/_}"
+  png="$ui_dir/.shot.png"
+  dest="$ui_dir/$(date +%H%M%S)-$name.jpg"
+  xcrun simctl io "$simulator_udid" screenshot --type=png "$png" > "$err" 2>&1 || fail shot
+  # 원본 PNG는 MB 단위라 긴 변 1200px JPEG로 줄인다. 줄이지 못하면 원본을 남긴다.
+  if sips -s format jpeg -s formatOptions 70 -Z 1200 "$png" --out "$dest" > /dev/null 2>&1; then
+    rm -f "$png"
+  else
+    dest="${dest%.jpg}.png"
+    mv "$png" "$dest"
+  fi
+  echo "✓ ui shot · ${dest#$root/}"
+}
+
+ui_tap() {
+  local label
+  case "${1:-}" in
+    --id) label="#${2:-}" ;;
+    --label) label="\"${2:-}\"" ;;
+    *) harness_die "tap에는 --id 식별자 또는 --label 라벨이 필요합니다" ;;
+  esac
+  if [ $# -ne 2 ] || [ -z "$2" ]; then harness_die "tap $1에 값이 필요합니다"; fi
+  harness_require_axe
+  # 화면 전환 중이면 요소가 늦게 나타난다. 최대 5초 기다리고, 누른 뒤 전환 시간을 0.5초 둔다.
+  axe_run tap "$1" "$2" --udid "$simulator_udid" --wait-timeout 5 --post-delay 0.5 > /dev/null \
+    || fail "tap $label" "화면 요소 확인: scripts/harness/ui tree"
+  echo "✓ ui tap $label"
+}
+
+ui_type() {
+  local length
+  if [ $# -ne 1 ] || [ -z "$1" ]; then
+    harness_die "type에는 입력할 텍스트 하나가 필요합니다 (공백이 있으면 따옴표로 감싼다)"
+  fi
+  harness_require_axe
+  # 키 입력으로 치면 시뮬레이터 키보드 언어에 따라 다른 글자가 들어간다(한글 두벌식이면 "Harness"가 "ㅗㅁ굳ㄴㄴ").
+  # 그래서 시뮬레이터 클립보드에 넣고 Cmd+V(HID 227 + 25)로 붙여 넣는다. 한글도 그대로 들어간다.
+  # pbcopy는 로캘이 없으면 한글을 읽지 못해서 UTF-8을 지정한다.
+  printf '%s' "$1" | LC_ALL=en_US.UTF-8 xcrun simctl pbcopy "$simulator_udid" 2> "$err" || fail type
+  axe_run key-combo --modifiers 227 --key 25 --udid "$simulator_udid" > /dev/null || fail type
+  # 테스트 계정 비밀번호 같은 값이 로그에 남지 않게 내용 대신 글자 수만 보여준다.
+  length="$(printf '%s' "$1" | LC_ALL=en_US.UTF-8 wc -m | tr -d ' ')"
+  echo "✓ ui type · ${length}자 (입력란에 들어갔는지는 ui tree로 확인)"
+}
+
+case "$cmd" in
+  tree) ui_tree "$@" ;;
+  shot) ui_shot "$@" ;;
+  tap) ui_tap "$@" ;;
+  type) ui_type "$@" ;;
+esac

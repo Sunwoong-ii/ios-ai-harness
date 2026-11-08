@@ -11,10 +11,10 @@
   - 이 저장소를 개발하기 위한 내용은 넣지 않는다.
   - `template/AGENTS.md`, `template/CLAUDE.md`: 프로젝트에 설치될 지침. AGENTS.md는 프로젝트 영역과 하네스 관리 블록으로 나뉜다
   - `template/.claude/rules/harness/`: 상황별 규칙. `paths:`로 해당 파일을 읽을 때만 로드된다. 프로젝트 고유 규칙 자리는 `rules/project/`
-  - `template/scripts/harness/`: 프로젝트 안에서 매일 쓰는 스크립트(build·test·verify)와 공용 함수 `lib.sh`. 설치되면 `scripts/harness/`가 된다.
+  - `template/scripts/harness/`: 프로젝트 안에서 매일 쓰는 스크립트(build·test·verify·run·ui)와 공용 함수 `lib.sh`. 설치되면 `scripts/harness/`가 된다.
   - `template/.harness/.gitignore`: 프로젝트의 `.harness/`에서 설정 파일만 커밋하게 한다.
   - `template/.claude/settings.json`: 권한 규칙(시크릿 읽기 deny, pbxproj 편집 deny, 파괴적 git 작업 ask)
-- `plugin/`: Claude Code 플러그인 `ios-harness`. 훅(생성 파일·pbxproj 편집 차단)과 리뷰 서브에이전트(`ios-reviewer`)를 담는다. 루트의 `.claude-plugin/marketplace.json`이 이 저장소를 마켓플레이스로 만든다
+- `plugin/`: Claude Code 플러그인 `ios-harness`. 훅(생성 파일·pbxproj 편집 차단), 리뷰 서브에이전트(`ios-reviewer`), 화면 확인 스킬(`ios-ui-check`)을 담는다. 루트의 `.claude-plugin/marketplace.json`이 이 저장소를 마켓플레이스로 만든다
 - `scripts/`: 하네스를 설치·관리하는 도구. 대상 프로젝트 경로를 인자로 받는다.
   - `scripts/detect <프로젝트 경로>`: 프로젝트 설정 파일 초안 만들기
   - `scripts/dev-install <프로젝트 경로>`: 개발 중인 하네스를 프로젝트에 설치·갱신

@@ -24,11 +24,33 @@ assert_eq "failed: 메시지가 없는 실패도 테스트 ID는 남긴다" "Foo
 assert_eq "failed: 통과한 테스트는 빼고 실패만" "2" "$(printf '%s\n' "$messages" | wc -l | tr -d ' ')"
 assert_eq "failed: 최대 개수 제한" "1" "$(printf '%s' "$tree" | failed_test_messages 1 | wc -l | tr -d ' ')"
 
+# Xcode 27부터는 메시지에 위치가 없고 sourceLocation에 절대 경로와 줄 번호가 따로 있다.
+tree='{"testNodes":[{"name":"FooTests","nodeType":"Unit test bundle","result":"Failed","children":[
+  {"name":"test_a()","nodeIdentifier":"FooTests/test_a()","nodeType":"Test Case","result":"Failed","children":[
+    {"name":"XCTAssertEqual failed: (\"1\") is not equal to (\"2\")","nodeType":"Failure Message",
+     "sourceLocation":{"filePath":"/Users/me/App/Tests/FooTests.swift","lineNumber":12}}]}]}]}'
+assert_eq "failed: Xcode 27 sourceLocation을 위치로" "FooTests/test_a()	/Users/me/App/Tests/FooTests.swift:12: XCTAssertEqual failed: (\"1\") is not equal to (\"2\")" "$(printf '%s' "$tree" | failed_test_messages 5)"
+# xcresulttool 대신 위 트리를 내보내는 함수로 바꿔, 출력 단계에서 경로를 줄이는지 본다.
+printed="$(root=/Users/me/App max_errors=5; xcrun() { printf '%s' "$tree"; }; harness_print_test_failures /fake.xcresult '{}')"
+assert_eq "print: 루트 안의 절대 경로는 루트 기준으로" "  Tests/FooTests.swift:12: XCTAssertEqual failed: (\"1\") is not equal to (\"2\")
+    ↳ FooTests/test_a()" "$printed"
+
 summary='{"testFailures":[{"testName":"test_x()","testIdentifierString":"BarTests/test_x()","failureText":"Crash: boom\nstack","targetName":"BarTests","testIdentifier":1}]}'
 assert_eq "summary: 위치가 없을 때 대체 출력은 첫 줄만" "  BarTests/test_x(): Crash: boom" "$(printf '%s' "$summary" | format_test_failures 5)"
 
 issue='{"errors":[{"issueType":"Error","message":"Testing cancelled because the build failed."}]}'
 assert_eq "issues: 타깃 이름이 없으면 메시지만" "  Testing cancelled because the build failed." "$(printf '%s' "$issue" | format_issues /x errors 5)"
+
+# 없는 스킴을 주면 결과 번들에는 "xcodebuild encountered an error"만 남고 원인은 로그에 있다.
+printf '%s\n' 'Command line invocation:' \
+  'xcodebuild: error: The workspace named "App" does not contain a scheme named "AppTests". The "-list" option can be used to find the names of the schemes in the workspace.' > "$work/build.log"
+generic='{"errorCount":1,"errors":[{"issueType":"Error","message":"xcodebuild encountered an error (65)"}]}'
+assert_eq "build errors: 뭉뚱그린 에러뿐이면 로그의 에러 줄도" "  xcodebuild encountered an error (65)
+  xcodebuild: error: The workspace named \"App\" does not contain a scheme named \"AppTests\". The \"-list\" option can be used to find the names of the schemes in the workspace." \
+  "$(root=/x max_errors=5; harness_print_build_errors "$generic" "$work/build.log")"
+compile='{"errorCount":1,"errors":[{"issueType":"Swift Compiler Error","message":"Cannot find x in scope","targetName":"App"}]}'
+assert_eq "build errors: 위치가 있는 에러가 있으면 로그는 붙이지 않는다" "  App: Cannot find x in scope" \
+  "$(root=/x max_errors=5; harness_print_build_errors "$compile" "$work/build.log")"
 
 # --- harness_derived_data_path ------------------------------------------------
 dd="$(harness_derived_data_path /Users/me/Desktop/App-slot)"

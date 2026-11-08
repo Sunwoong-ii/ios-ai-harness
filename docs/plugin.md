@@ -1,6 +1,6 @@
 # 플러그인
 
-`plugin/`은 Claude Code 플러그인 `ios-harness`다. 여러 프로젝트에 공통으로 적용할 훅과 서브에이전트를 담는다. 이후 단위에서 스킬도 추가한다.
+`plugin/`은 Claude Code 플러그인 `ios-harness`다. 여러 프로젝트에 공통으로 적용할 훅, 서브에이전트, 스킬을 담는다.
 이 저장소 루트의 `.claude-plugin/marketplace.json` 덕분에 저장소 자체가 마켓플레이스(`ios-ai-harness`) 역할을 한다.
 
 ## 구성
@@ -11,9 +11,11 @@ plugin/
 ├── .claude-plugin/plugin.json      플러그인 정보(이름 ios-harness, 버전)
 ├── agents/
 │   └── ios-reviewer.md             읽기 전용 리뷰 서브에이전트 (ios-harness:ios-reviewer)
-└── hooks/
-    ├── hooks.json                  훅 등록: Edit·Write·MultiEdit·NotebookEdit 전에 protect-generated.sh 실행
-    └── protect-generated.sh        생성 파일·pbxproj 편집 차단
+├── hooks/
+│   ├── hooks.json                  훅 등록: Edit·Write·MultiEdit·NotebookEdit 전에 protect-generated.sh 실행
+│   └── protect-generated.sh        생성 파일·pbxproj 편집 차단
+└── skills/
+    └── ios-ui-check/SKILL.md       앱을 실행해 화면을 확인하는 절차 (ios-harness:ios-ui-check)
 ```
 
 ## 훅: protect-generated.sh
@@ -41,6 +43,18 @@ plugin/
   - 발견이 있으면 `[차단|권장|참고] 경로:줄 — 문제`, 근거, 제안을 세 줄로 쓰고 마지막에 요약 줄을 붙인다.
   - 마지막에 "열어 본 파일·규칙"을 적는다. 검토 순서를 지켰는지 확인하기 위해서다.
 - 언제 쓰나: PR을 만들기 전, 또는 사용자가 리뷰를 요청할 때. 프로젝트 AGENTS.md의 관리 블록에 안내가 있다.
+
+## 스킬: ios-ui-check
+
+화면을 바꾼 뒤 앱을 실행해 직접 확인하는 절차다. `scripts/harness/run`과 `scripts/harness/ui`를 쓴다([scripts.md](scripts.md)). 도구를 고른 이유는 [ADR 0005](decisions/0005-ui-observation.md)에 있다.
+
+- 막으려는 실패
+  - 빌드와 테스트만 통과하고 화면을 보지 않은 채 완료로 보고한다.
+  - 좌표로 눌러서 기기 크기가 바뀌면 깨진다.
+  - 접근성 트리 원본(수백 KB)을 통째로 읽는다.
+- 절차: verify 통과 → run → `ui tree`로 화면 확인 → 식별자·라벨로 이동 → 문구·상태는 tree, 레이아웃은 `ui shot` → 본 것을 근거로 보고
+- 언제 쓰나: 스킬 설명(description)에 맞는 상황이면 Claude Code가 스스로 불러온다. 화면을 바꾼 뒤 완료를 보고하기 전, 사용자가 화면 확인을 요청할 때, UI 버그를 재현할 때다.
+- 프로젝트마다 다른 확인 시나리오(예: 가상 주행)는 이 스킬에 넣지 않는다. 프로젝트 스킬로 만든다([scripts.md](scripts.md)의 "프로젝트 시나리오").
 
 ## 프로젝트에서 켜기
 

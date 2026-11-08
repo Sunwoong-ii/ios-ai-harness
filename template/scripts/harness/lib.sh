@@ -1,4 +1,4 @@
-# 하네스 스크립트 공용 함수. build·test·verify가 source한다. (bash 3.2 호환)
+# 하네스 스크립트 공용 함수. build·test·verify·run·ui가 source한다. (bash 3.2 호환)
 #
 # harness_init 이후 쓸 수 있는 변수
 #   root          프로젝트 루트 (HARNESS_ROOT 또는 현재 디렉터리의 git 루트)
@@ -69,6 +69,7 @@ pick_simulator() {
 }
 
 # 설정의 시뮬레이터로 -destination 값을 만든다. 없으면 사용 가능한 이름을 보여주고 멈춘다.
+# destination(-destination 값), destination_label(기기 이름), simulator_udid를 채운다.
 harness_destination() {
   local name os json udid
   name="$(cfg .destination.simulator)"
@@ -87,6 +88,7 @@ harness_destination() {
   fi
   destination="id=$udid"
   destination_label="$name"
+  simulator_udid="$udid"
 }
 
 # --- 프로젝트 생성 (Tuist·XcodeGen) ---------------------------------------------
@@ -186,6 +188,107 @@ module_has_tests() {
   [ -n "${3:-}" ] && [ -d "$root/$1/$3" ]
 }
 
+# --- 앱 실행과 화면 (run·ui) ------------------------------------------------------
+
+# showBuildSettings JSON(stdin)에서 스킴($1)이 만드는 앱의 경로를 찾는다.
+# 앱 타깃이 여럿이면 이름이 스킴과 같은 것을, 없으면 첫 번째를 고른다.
+pick_app_product() {
+  jq -r --arg scheme "$1" '
+    [ .[].buildSettings | select(.PRODUCT_TYPE == "com.apple.product-type.application") ]
+    | (map(select(.TARGET_NAME == $scheme)) + .) | first
+    | if . then "\(.TARGET_BUILD_DIR)/\(.FULL_PRODUCT_NAME)" else empty end'
+}
+
+# 스킴($1)의 앱 경로를 app_path에 담는다. 빌드 결과물 폴더를 뒤지지 않고 빌드 설정에서 읽는다.
+# Demo 앱처럼 .app이 여럿인 프로젝트가 있어서다. harness_container_args·harness_destination 뒤에 부른다.
+harness_app_path() {
+  local json
+  json="$(xcodebuild -showBuildSettings -json "${container_args[@]}" -scheme "$1" \
+    -destination "$destination" -derivedDataPath "$derived_data" 2>/dev/null)" \
+    || harness_die "스킴 $1의 빌드 설정을 읽지 못했습니다"
+  app_path="$(printf '%s' "$json" | pick_app_product "$1")"
+  [ -n "$app_path" ] || harness_die "스킴 $1에 앱 타깃이 없습니다"
+}
+
+# 시뮬레이터($1)의 상태(Booted, Shutdown 등). 찾지 못하면 빈 문자열.
+simulator_state() {
+  xcrun simctl list devices -j 2>/dev/null \
+    | jq -r --arg udid "$1" '[ .devices[][] | select(.udid == $udid) | .state ][0] // empty'
+}
+
+# 시뮬레이터($1)가 꺼져 있으면 부팅하고 끝날 때까지 기다린다. 시뮬레이터 창은 열지 않는다.
+# 진행 상황과 에러를 출력하고, 실패하면 0이 아닌 값을 반환한다. 부르는 쪽이 로그로 남겨 실패 원인을 보여준다.
+harness_boot_simulator() {
+  if [ "$(simulator_state "$1")" = Booted ]; then return 0; fi
+  xcrun simctl bootstatus "$1" -b
+}
+
+# 버전 $1이 $2 이상이면 성공한다 (예: 1.10.0 ≥ 1.8.0).
+version_at_least() {
+  [ "$(printf '%s\n%s\n' "$2" "$1" | sort -t. -k1,1n -k2,2n -k3,3n | head -n 1)" = "$2" ]
+}
+
+# AXe 경로를 axe에 담는다(HARNESS_AXE로 바꿀 수 있다). 없거나 버전이 낮으면 설치 방법을 보여주고 멈춘다.
+# AXe는 화면 요소 읽기·탭·입력에만 쓴다. 스크린샷과 앱 실행은 simctl로 한다(ADR 0005).
+harness_axe_min_version=1.8.0
+harness_require_axe() {
+  local version
+  axe="${HARNESS_AXE:-$(command -v axe 2>/dev/null || true)}"
+  if [ -z "$axe" ] || [ ! -x "$axe" ]; then
+    harness_die "AXe가 필요합니다: brew install cameroncooke/axe/axe (화면 요소 읽기·탭·입력에 쓴다. 스크린샷은 AXe 없이 된다)"
+  fi
+  version="$("$axe" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1 || true)"
+  if [ -z "$version" ] || ! version_at_least "$version" "$harness_axe_min_version"; then
+    harness_die "AXe ${version:-버전 확인 불가}는 지원하지 않습니다. $harness_axe_min_version 이상이 필요합니다: brew upgrade cameroncooke/axe/axe"
+  fi
+}
+
+# axe describe-ui JSON(stdin)을 요소마다 한 줄로 요약한다: 타입 "라벨" #식별자 =값 (비활성) @x,y 너비x높이
+# - 라벨이나 값이 있는 요소, 식별자가 있는 Group 이외의 요소만 남긴다. 나머지는 배치용 컨테이너다.
+# - 크기가 0인 요소(화면 밖)는 뺀다. 식별자·값이 라벨과 같으면 한 번만 쓴다.
+# - 화면 키보드는 자판마다 요소가 있어서 한 줄로 줄인다. 시스템 스크롤 막대는 뺀다.
+# - 지도(MapKit) 위의 지명·핀은 수십 개씩 나와서 "지도 표시 N개 (앞의 5개, …)" 한 줄로 줄인다. 전체는 원본에 있다.
+# - 값이 80자를 넘으면 자른다. iOS 27의 지도 이미지는 값에 지도 상태 JSON을 통째로 담는다.
+# - 라벨이 있는 버튼·링크 안의 텍스트·이미지는 버튼 라벨과 겹쳐서 뺀다. 연달아 같은 줄은 한 번만 쓴다.
+summarize_ui_tree() {
+  jq -r '
+    def text: (. // "") | tostring | gsub("^\\s+|\\s+$"; "");
+    def visible: (.frame.width // 0) > 0 and (.frame.height // 0) > 0;
+    def frame: " @\(.frame.x | floor),\(.frame.y | floor) \(.frame.width | floor)x\(.frame.height | floor)";
+    # 줄은 문자열로, 지도 표시는 {place: 라벨}로 내보내고 마지막에 모은다.
+    def summarize($in_control):
+      (.AXLabel | text) as $label | (.AXUniqueId | text) as $id | (.AXValue | text) as $value
+      | ($in_control or ($label != "" and (.type | IN("Button", "Link", "RadioButton", "Cell")))) as $child_in_control
+      | if ($id | startswith("UIKeyboardLayout")) then
+          (if visible then "Keyboard (화면 키보드가 떠 있음)" + frame else empty end)
+        elif $id == "VKPointFeature" then
+          (if visible and $label != "" then { place: $label } else empty end)
+        else
+          ( select(visible)
+            | select($label != "" or $value != "" or ($id != "" and .type != "Group"))
+            | select($label | test("scroll bar|스크롤 막대"; "i") | not)
+            | select(($in_control and (.type == "StaticText" or .type == "Image")) | not)
+            | .type
+              + (if $label != "" then " \"\($label)\"" else "" end)
+              + (if $id != "" and $id != $label then " #\($id)" else "" end)
+              + (if $value != "" and $value != $label
+                 then " =\(if ($value | length) > 80 then $value[:77] + "…" else $value end)" else "" end)
+              + (if .enabled == false then " (비활성)" else "" end)
+              + frame ),
+          ( (.children // [])[] | summarize($child_in_control) )
+        end;
+    [ (if type == "array" then .[] else . end) | summarize(false) ] as $items
+    | [ $items[] | objects | .place ] as $places
+    | "지도 표시 \($places | length)개 (\($places[:5] | join(", "))\(if ($places | length) > 5 then ", …" else "" end))" as $place_line
+    # 첫 지명 자리에 요약 한 줄을 넣고, 나머지 지명은 뺀다.
+    | reduce $items[] as $item ({ out: [], placed: false };
+        if ($item | type) == "object" then
+          (if .placed then . else .out += [$place_line] | .placed = true end)
+        else .out += [$item] end)
+    | .out[]' \
+    | awk '$0 != prev { print } { prev = $0 }'
+}
+
 # --- 결과 요약 ---------------------------------------------------------------
 
 # 결과 번들($1)의 빌드 결과 JSON. 번들이 없거나 읽지 못하면 빈 문자열.
@@ -215,6 +318,11 @@ harness_print_build_errors() {
   if [ "$count" -gt 0 ]; then
     printf '%s' "$json" | format_issues "$root" errors "$max_errors"
     if [ "$count" -gt "$max_errors" ]; then echo "  … 에러 $((count - max_errors))개 더 있음"; fi
+    # 결과 번들의 에러가 "xcodebuild encountered an error (65)"뿐이면 원인(없는 스킴 이름 등)은 로그에만 있다.
+    if ! printf '%s' "$json" \
+      | jq -e '[ .errors[]?.message | select(test("^xcodebuild encountered an error") | not) ] | length > 0' > /dev/null; then
+      { grep -E 'error:' "$log" || true; } | head -n 5 | sed 's/^/  /'
+    fi
   else
     { grep -E 'error:|ERROR' "$log" || tail -n 20 "$log"; } | head -n 20 | sed 's/^/  /' || true
   fi
@@ -229,12 +337,18 @@ format_test_failures() {
 }
 
 # 테스트 트리 JSON(stdin, xcresulttool get test-results tests)에서 실패한 테스트의
-# 실패 메시지를 최대 $1개 "테스트ID<TAB>메시지"로 출력한다. 메시지는 보통 "File.swift:42: ..." 형태다.
+# 실패 메시지를 최대 $1개 "테스트ID<TAB>위치: 메시지"로 출력한다. 위치는 "경로:줄" 형태다.
+# - Xcode 26까지: 위치가 메시지 앞에 붙어 있다("File.swift:42: ..."). 파일 이름만 있다.
+# - Xcode 27부터: 메시지에는 위치가 없고 sourceLocation(절대 경로, 줄 번호)에 따로 있다.
 failed_test_messages() {
   jq -r --argjson max "${1:-5}" '
     [ .. | objects | select(.nodeType? == "Test Case" and .result? == "Failed")
       | (.nodeIdentifier // .name) as $id
-      | ([ .children[]? | select(.nodeType == "Failure Message") | .name ] | if length == 0 then [""] else . end)[]
+      | ([ .children[]? | select(.nodeType == "Failure Message")
+           | if .sourceLocation.filePath? then
+               "\(.sourceLocation.filePath):\(.sourceLocation.lineNumber // 0): \(.name)"
+             else .name end ]
+         | if length == 0 then [""] else . end)[]
       | "\($id)\t\(split("\n")[0] // "")" ]
     | .[:$max][]'
 }
@@ -252,7 +366,7 @@ resolve_source_path() {
 
 # 실패한 테스트를 "경로:줄: 메시지"와 테스트 ID로 출력한다. 위치를 못 찾으면 요약의 실패 문구를 쓴다.
 harness_print_test_failures() { # 결과번들 요약JSON
-  local tests lines re id msg
+  local tests lines re id msg path
   tests="$(xcrun xcresulttool get test-results tests --path "$1" --compact 2>/dev/null || true)"
   lines=""
   if [ -n "$tests" ]; then lines="$(printf '%s' "$tests" | failed_test_messages "$max_errors")"; fi
@@ -263,7 +377,14 @@ harness_print_test_failures() { # 결과번들 요약JSON
   re='^([^:]+\.swift):([0-9]+): (.*)$'
   while IFS=$'\t' read -r id msg; do
     if [[ $msg =~ $re ]]; then
-      echo "  $(resolve_source_path "${BASH_REMATCH[1]}"):${BASH_REMATCH[2]}: ${BASH_REMATCH[3]}"
+      path="${BASH_REMATCH[1]}"
+      # 절대 경로(Xcode 27)는 루트 기준으로 줄이고, 파일 이름만 있으면(Xcode 26) git이 아는 파일에서 찾는다.
+      case "$path" in
+        "$root"/*) path="${path#"$root"/}" ;;
+        /*) ;;
+        *) path="$(resolve_source_path "$path")" ;;
+      esac
+      echo "  $path:${BASH_REMATCH[2]}: ${BASH_REMATCH[3]}"
     elif [ -n "$msg" ]; then
       echo "  $msg"
     fi

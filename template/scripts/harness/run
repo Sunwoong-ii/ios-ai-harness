@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# 앱을 빌드하고 시뮬레이터에 설치해 실행한다. 화면 확인은 scripts/harness/ui로 한다.
+set -euo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/lib.sh"
+
+usage() {
+  cat <<'EOF'
+사용법: scripts/harness/run [--scheme 스킴] [-- 실행 인자...]
+
+  앱을 빌드한 뒤 .harness/project.json의 시뮬레이터에 설치하고 실행한다.
+  항상 빌드부터 한다. 코드를 고친 뒤 예전 빌드를 띄워 확인하는 실수를 막기 위해서다.
+  이미 실행 중이면 종료하고 다시 실행한다. 시뮬레이터 창은 열지 않는다.
+
+  --scheme 스킴   앱 대신 이 스킴의 앱을 실행한다 (예: 모듈의 Demo 앱)
+  -- 실행 인자    앱에 넘길 인자 (예: -- -UseMockSensors)
+
+산출물 (.harness/out/): app.log(앱의 print·Logger 출력, Xcode 콘솔과 비슷), run.log(설치·실행 로그)
+  .harness/out/ui/(ui의 스크린샷·화면 요소)는 실행할 때마다 비운다.
+EOF
+}
+
+scheme=""
+launch_args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --scheme) [ $# -ge 2 ] || harness_die "--scheme에 스킴 이름이 필요합니다"; scheme="$2"; shift ;;
+    --) shift; launch_args=("$@"); break ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "run: 알 수 없는 인자: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+harness_init
+scheme="${scheme:-$(cfg .app.scheme)}"
+[ -n "$scheme" ] || harness_die "설정에 app.scheme이 없습니다"
+
+# build가 실패하면 그 출력이 원인이다. 그대로 두고 같은 코드로 끝낸다.
+"$here/build" --scheme "$scheme" || exit $?
+
+harness_container_args
+harness_destination
+start=$SECONDS
+harness_app_path "$scheme"
+[ -d "$app_path" ] || harness_die "빌드한 앱이 없습니다: $app_path"
+bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist" 2>/dev/null || true)"
+[ -n "$bundle_id" ] || harness_die "앱의 번들 ID를 읽지 못했습니다: $app_path/Info.plist"
+
+log="$out_dir/run.log"
+app_log="$out_dir/app.log"
+rm -rf "$out_dir/ui"
+mkdir -p "$out_dir/ui"
+: > "$log"
+
+fail() { # 단계
+  echo "✗ run $scheme 실패 · $1 · $destination_label"
+  tail -n 20 "$log" | sed 's/^/  /'
+  echo "  로그: ${log#$root/}"
+  exit 1
+}
+
+harness_boot_simulator "$simulator_udid" >> "$log" 2>&1 || fail "부팅"
+xcrun simctl install "$simulator_udid" "$app_path" >> "$log" 2>&1 || fail "설치"
+# OS_ACTIVITY_DT_MODE: Xcode 콘솔처럼 Logger·os_log 출력도 표준 에러로 내보낸다. SIMCTL_CHILD_로 앱에 전달된다.
+# bash 3.2에서 빈 배열을 그대로 펼치면 set -u에 걸려서 ${arr[@]+...} 형태로 쓴다.
+SIMCTL_CHILD_OS_ACTIVITY_DT_MODE=enable \
+  xcrun simctl launch --terminate-running-process --stdout="$app_log" --stderr="$app_log" \
+  "$simulator_udid" "$bundle_id" ${launch_args[@]+"${launch_args[@]}"} >> "$log" 2>&1 || fail "실행"
+
+echo "✓ run $scheme · $destination_label · $((SECONDS - start))s · 앱 로그: ${app_log#$root/}"
