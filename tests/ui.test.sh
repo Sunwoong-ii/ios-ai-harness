@@ -83,7 +83,7 @@ p="$work/project"
 mkdir -p "$p/.harness" "$work/scripts" "$work/bin" "$work/dd/App.app"
 jq -n '{ schemaVersion: 1, generator: "tuist", commands: {}, workspace: "App.xcworkspace", project: null,
   app: { scheme: "App" }, destination: { simulator: "iPhone 17 Pro", os: "latest" }, modules: null }' > "$p/.harness/project.json"
-cp "$here/../template/scripts/harness/lib.sh" "$here/../template/scripts/harness/run" "$work/scripts/"
+cp "$here/../template/scripts/harness/lib.sh" "$here/../template/scripts/harness/run" "$here/../template/scripts/harness/ui" "$work/scripts/"
 cat > "$work/dd/App.app/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -114,10 +114,30 @@ case "$1 $2" in
   "simctl launch")
     echo "launch-env OS_ACTIVITY_DT_MODE=${SIMCTL_CHILD_OS_ACTIVITY_DT_MODE:-}" >> "$CALLS"
     echo "com.example.App: 123" ;;
+  "simctl io")
+    # 1x1 PNG. sips로 JPEG 변환까지 실제로 거친다.
+    eval "dest=\${$#}"
+    echo 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' | base64 --decode > "$dest" ;;
 esac
 EOF
-chmod +x "$work/scripts/build" "$work/scripts/run" "$work/bin/xcodebuild" "$work/bin/xcrun"
-export CALLS="$work/calls" FAKE_DD="$work/dd"
+# 가짜 AXe: describe-ui는 $FAKE_TREE를 내보내고, tap은 $FAKE_TAP_FAIL이면 AXe와 같은 문구로 실패한다.
+cat > "$work/axe" <<'EOF'
+#!/bin/bash
+echo "axe $*" >> "$CALLS"
+case "$1" in
+  --version) echo 1.8.0 ;;
+  describe-ui) printf '%s' "$FAKE_TREE" ;;
+  tap)
+    if [ -n "${FAKE_TAP_FAIL:-}" ]; then
+      echo "Warning: No accessibility element matched $2 '$3'. Make sure the app is on the expected screen, then run \`axe describe-ui --udid <SIMULATOR_UDID>\` and prefer --id when available. No tap performed." >&2
+      echo "Error: No accessibility element matched $2 '$3'. Make sure the app is on the expected screen, then run \`axe describe-ui --udid <SIMULATOR_UDID>\` and prefer --id when available." >&2
+      exit 1
+    fi ;;
+  type) echo "typed $(cat)" >> "$CALLS" ;;
+esac
+EOF
+chmod +x "$work/scripts/build" "$work/scripts/run" "$work/scripts/ui" "$work/bin/xcodebuild" "$work/bin/xcrun" "$work/axe"
+export CALLS="$work/calls" FAKE_DD="$work/dd" HARNESS_AXE="$work/axe"
 run_fake() { # 스크립트 인자...
   local script="$1"; shift
   : > "$CALLS"
@@ -149,5 +169,52 @@ assert_eq "run: 빌드 실패면 설치하지 않는다" "0" "$(called 'simctl i
 out="$(FAKE_INSTALL_CODE=1 run_fake run)" || true
 assert_eq "run: 설치 실패 요약" "✗ run App 실패 · 설치 · iPhone 17 Pro" "$(printf '%s\n' "$out" | sed -n 2p)"
 assert_eq "run: 설치 실패면 실행하지 않는다" "0" "$(called 'simctl launch')"
+
+# --- ui ----------------------------------------------------------------------
+export FAKE_TREE="$tree"
+out="$(run_fake ui tree)"
+assert_eq "ui tree: 개수와 원본 경로, 요소마다 한 줄" "· 화면 요소 5개 · 원본: .harness/out/ui/tree.json
+  Application \"App\" @0,0 402x874
+  Button \"현재 위치로\" @150,428 97x30
+  StaticText \"북한강 라이딩\" @16,510 200x20
+  Button \"Dictate\" #dictation @325,805 68x68
+  Keyboard (화면 키보드가 떠 있음) @0,583 402x233" "$out"
+assert_eq "ui tree: 원본을 남긴다" "$tree" "$(cat "$p/.harness/out/ui/tree.json")"
+
+if out="$(HARNESS_AXE="$work/none" run_fake ui tree)"; then code=0; else code=$?; fi
+assert_eq "ui tree: AXe가 없으면 설정 오류(2)" "2" "$code"
+
+if out="$(FAKE_STATE=Shutdown run_fake ui tree)"; then code=0; else code=$?; fi
+assert_eq "ui: 시뮬레이터가 꺼져 있으면 run 안내" "2 harness: 시뮬레이터(iPhone 17 Pro)가 꺼져 있습니다. scripts/harness/run으로 앱을 먼저 실행하세요" "$code $out"
+
+rm -rf "$p/.harness/out/ui"
+out="$(HARNESS_AXE="$work/none" run_fake ui shot "home screen" | sed -E 's/[0-9]{6}-/HHMMSS-/')"
+assert_eq "ui shot: AXe 없이 JPEG로 저장, 공백은 _로" "✓ ui shot · .harness/out/ui/HHMMSS-home_screen.jpg" "$out"
+assert_eq "ui shot: 실제 JPEG 파일" "JPEG" "$(file -b "$p"/.harness/out/ui/*-home_screen.jpg | cut -d' ' -f1)"
+assert_eq "ui shot: 임시 PNG를 지운다" "0" "$(find "$p/.harness/out/ui" -name '*.png' | wc -l | tr -d ' ')"
+
+out="$(run_fake ui tap --id startRecordingButton)"
+assert_eq "ui tap: 식별자로 누른다" "✓ ui tap #startRecordingButton" "$out"
+assert_eq "ui tap: 요소가 나타날 때까지 기다린다" "1" "$(called 'axe tap --id startRecordingButton --udid SIM1 --wait-timeout 5')"
+assert_eq "ui tap: 라벨로 누른다" '✓ ui tap "시작"' "$(run_fake ui tap --label 시작)"
+
+if out="$(FAKE_TAP_FAIL=1 run_fake ui tap --id nope)"; then code=0; else code=$?; fi
+assert_eq "ui tap: 못 찾으면 첫 문장과 tree 안내" "1 ✗ ui tap #nope 실패
+  No accessibility element matched --id 'nope'.
+  화면 요소 확인: scripts/harness/ui tree" "$code $out"
+
+if out="$(run_fake ui tap startRecordingButton)"; then code=0; else code=$?; fi
+assert_eq "ui tap: --id·--label이 없으면 인자 오류(2)" "2" "$code"
+
+out="$(run_fake ui type "-hello world")"
+assert_eq "ui type: 내용 대신 길이만" "✓ ui type · 12자" "$out"
+assert_eq "ui type: -로 시작해도 그대로 입력" "1" "$(called 'typed -hello world')"
+
+if out="$(run_fake ui type 북한강)"; then code=0; else code=$?; fi
+assert_eq "ui type: US 키보드 밖의 문자는 거절" "2 harness: type은 US 키보드 문자(영문·숫자·기호·공백)만 입력할 수 있습니다" "$code $out"
+assert_eq "ui type: 거절하면 AXe를 부르지 않는다" "0" "$(called 'axe type')"
+
+if out="$(run_fake ui swipe)"; then code=0; else code=$?; fi
+assert_eq "ui: 모르는 명령은 인자 오류(2)" "2" "$code"
 
 finish
