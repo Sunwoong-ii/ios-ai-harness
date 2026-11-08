@@ -207,10 +207,14 @@
   - 막히는 것: `xcodebuild`(DerivedData 쓰기), 시뮬레이터 제어(CoreSimulatorService)
   - MCP 서버는 샌드박스 밖에서 실행되므로 동작한다.
 
-## 로컬 환경 (2026-10-01 확인)
+## 로컬 환경 (2026-11-08 확인)
 
-- Xcode 26.6 (17F113), Swift 6.3.3, Tuist 4.81.1, Claude Code CLI 2.1.209
+- macOS 27.2, Xcode 27.2 (27B52), Swift 6.4.2, Tuist 4.81.1, Claude Code CLI 2.1.296
+  - 2026-10-01에는 macOS 26, Xcode 26.6 (17F113), Swift 6.3.3이었다. 단위 1~9는 이 환경에서 확인했다.
+- iOS 시뮬레이터 런타임: 26.3, 26.5, 27.2. iOS 27.2에는 iPhone 17 Pro가 없고 iPhone 18 Pro부터 있다.
+- Command Line Tools 27.2. 2021년판(clang 12)이 남아 있어서 Homebrew가 설치를 막았고, 지우고 다시 설치했다.
 - 기본 도구: `/usr/bin/jq` 1.7.1, python3 3.9.6
+- Homebrew로 설치: AXe 1.8.0 (`/opt/homebrew/bin/axe`)
 - Xcode 툴체인에 포함된 것
   - `swift format` 6.3: `NeverForceUnwrap`, `NeverUseForceTry` 규칙이 있다. 기본으로 꺼져 있다.
   - `sourcekit-lsp`
