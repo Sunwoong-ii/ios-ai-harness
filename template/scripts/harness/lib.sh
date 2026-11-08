@@ -245,19 +245,33 @@ harness_require_axe() {
 # axe describe-ui JSON(stdin)을 요소마다 한 줄로 요약한다: 타입 "라벨" #식별자 =값 (비활성) @x,y 너비x높이
 # - 라벨이나 값이 있는 요소, 식별자가 있는 Group 이외의 요소만 남긴다. 나머지는 배치용 컨테이너다.
 # - 크기가 0인 요소(화면 밖)는 뺀다. 식별자·값이 라벨과 같으면 한 번만 쓴다.
+# - 화면 키보드는 자판마다 요소가 있어서 한 줄로 줄인다. 시스템 스크롤 막대는 뺀다.
+# - 라벨이 있는 버튼·링크 안의 텍스트·이미지는 버튼 라벨과 겹쳐서 뺀다. 연달아 같은 줄은 한 번만 쓴다.
 summarize_ui_tree() {
   jq -r '
     def text: (. // "") | tostring | gsub("^\\s+|\\s+$"; "");
-    .. | objects | select(has("type") and has("frame"))
-    | select(.frame.width > 0 and .frame.height > 0)
-    | (.AXLabel | text) as $label | (.AXUniqueId | text) as $id | (.AXValue | text) as $value
-    | select($label != "" or $value != "" or ($id != "" and .type != "Group"))
-    | .type
-      + (if $label != "" then " \"\($label)\"" else "" end)
-      + (if $id != "" and $id != $label then " #\($id)" else "" end)
-      + (if $value != "" and $value != $label then " =\($value)" else "" end)
-      + (if .enabled == false then " (비활성)" else "" end)
-      + " @\(.frame.x | floor),\(.frame.y | floor) \(.frame.width | floor)x\(.frame.height | floor)"'
+    def visible: (.frame.width // 0) > 0 and (.frame.height // 0) > 0;
+    def frame: " @\(.frame.x | floor),\(.frame.y | floor) \(.frame.width | floor)x\(.frame.height | floor)";
+    def summarize($in_control):
+      (.AXLabel | text) as $label | (.AXUniqueId | text) as $id | (.AXValue | text) as $value
+      | ($in_control or ($label != "" and (.type | IN("Button", "Link", "RadioButton", "Cell")))) as $child_in_control
+      | if ($id | startswith("UIKeyboardLayout")) then
+          (if visible then "Keyboard (화면 키보드가 떠 있음)" + frame else empty end)
+        else
+          ( select(visible)
+            | select($label != "" or $value != "" or ($id != "" and .type != "Group"))
+            | select($label | test("scroll bar|스크롤 막대"; "i") | not)
+            | select(($in_control and (.type == "StaticText" or .type == "Image")) | not)
+            | .type
+              + (if $label != "" then " \"\($label)\"" else "" end)
+              + (if $id != "" and $id != $label then " #\($id)" else "" end)
+              + (if $value != "" and $value != $label then " =\($value)" else "" end)
+              + (if .enabled == false then " (비활성)" else "" end)
+              + frame ),
+          ( (.children // [])[] | summarize($child_in_control) )
+        end;
+    (if type == "array" then .[] else . end) | summarize(false)' \
+    | awk '$0 != prev { print } { prev = $0 }'
 }
 
 # --- 결과 요약 ---------------------------------------------------------------

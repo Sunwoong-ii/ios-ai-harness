@@ -57,6 +57,25 @@ assert_eq "tree: 값" 'StaticText "속도" =72 km/h @20,120 120x20' "$(line 3)"
 assert_eq "tree: 숫자 값" 'Slider #zoom =50 @20,160 200x30' "$(line 4)"
 assert_eq "tree: 라벨 없이 식별자만 있는 입력란" 'TextField #tourNameField @20,200 300x40' "$(line 5)"
 
+# 화면 키보드·스크롤 막대·버튼 안의 텍스트처럼 겹치거나 시스템이 붙인 요소
+tree='[{"type":"Application","AXLabel":"App","frame":{"x":0,"y":0,"width":402,"height":874},"children":[
+  {"type":"Button","AXLabel":"현재 위치로","frame":{"x":150,"y":428,"width":97,"height":30},"children":[
+    {"type":"Image","AXLabel":"Location Services","frame":{"x":164,"y":437,"width":12,"height":12}},
+    {"type":"StaticText","AXLabel":"현재 위치로","frame":{"x":182,"y":436,"width":55,"height":14}}]},
+  {"type":"Button","frame":{"x":0,"y":500,"width":402,"height":60},"children":[
+    {"type":"StaticText","AXLabel":"북한강 라이딩","frame":{"x":16,"y":510,"width":200,"height":20}}]},
+  {"type":"Slider","AXLabel":"Vertical scroll bar, 1 page","AXValue":"0%","frame":{"x":328,"y":276,"width":30,"height":52}},
+  {"type":"Button","AXLabel":"Dictate","AXUniqueId":"dictation","frame":{"x":325,"y":805,"width":68,"height":68}},
+  {"type":"Button","AXLabel":"Dictate","AXUniqueId":"dictation","frame":{"x":325,"y":805,"width":68,"height":68}},
+  {"type":"Group","AXUniqueId":"UIKeyboardLayoutStar Preview","frame":{"x":0,"y":583,"width":402,"height":233},"children":[
+    {"type":"Button","AXLabel":"ㅂ","frame":{"x":4,"y":590,"width":39,"height":54}},
+    {"type":"Button","AXLabel":"ㅈ","frame":{"x":44,"y":590,"width":39,"height":54}}]}]}]'
+assert_eq "tree: 키보드는 한 줄, 스크롤 막대·버튼 안 텍스트·연속 중복은 뺀다" 'Application "App" @0,0 402x874
+Button "현재 위치로" @150,428 97x30
+StaticText "북한강 라이딩" @16,510 200x20
+Button "Dictate" #dictation @325,805 68x68
+Keyboard (화면 키보드가 떠 있음) @0,583 402x233' "$(printf '%s' "$tree" | summarize_ui_tree)"
+
 # --- 가짜 프로젝트와 명령 ---------------------------------------------------------
 # 스크립트를 임시 scripts/에 복사해서, 옆에 둔 가짜 build를 부르게 한다.
 # xcrun·xcodebuild는 PATH 앞의 가짜 명령으로 바꾸고, 호출을 $CALLS에 기록한다.
