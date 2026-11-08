@@ -18,6 +18,27 @@
 
 ## 기록
 
+### 2026-11-08 — `ui type`이 다른 글자를 넣고도 성공으로 보고한다
+- 프로젝트·작업: MotoTrace 시험장, iOS 27.2 시뮬레이터에서 AXe로 가짜 센서 주행 흐름 확인. 투어 이름 알림에 `scripts/harness/ui type "Harness Ride"`
+- 무슨 일이 있었나
+  - 출력은 `✓ ui type · 12자`였지만, `ui tree`로 보니 입력란 값이 `ㅗㅁ굳ㄴㄴ 꺙ㄷ`였다.
+  - AXe의 `type`은 키보드 키 입력(HID)으로 친다. 시뮬레이터 키보드가 한글 두벌식이라 같은 키가 한글 자모로 바뀌었다.
+  - 에이전트가 tree를 다시 보지 않았다면 틀린 값을 넣은 채 다음 단계로 갔을 것이다.
+- 원인: Execution — 입력 방식이 시뮬레이터 키보드 언어에 따라 결과가 달라지는데, 그 상태를 확인하지 않았다.
+- 조치
+  - 시뮬레이터 클립보드에 넣고(`simctl pbcopy`, UTF-8 로캘 지정) Cmd+V로 붙여 넣게 바꿨다. 키보드 언어와 상관없고 한글도 들어간다. 붙여넣기 허용 알림도 뜨지 않았다.
+  - 비밀번호 칸은 값이 가려져서 들어갔는지 자동으로 확인하지 않는다. 출력과 스킬에서 tree로 확인하라고 안내한다.
+- 상태: 반영됨 (feature/unit-10-ui-check)
+
+### 2026-11-08 — iOS 27.2 시뮬레이터에 AXe가 처음 연결할 때 실패한다
+- 프로젝트·작업: MotoTrace 시험장, iOS 27.2 시뮬레이터를 새로 부팅한 직후 `scripts/harness/ui tree`
+- 무슨 일이 있었나
+  - `Timed out creating the simulator remote automation session`으로 실패했다. 하네스의 1초 뒤 재시도도 같은 이유로 실패했다.
+  - AXe를 직접 다시 부르니 두 번째(6초)와 세 번째(1초)는 성공했다. iOS 26.3에서도 첫 호출이 `No translation object returned`로 한 번 실패한 적이 있다.
+- 원인: Execution — 시뮬레이터와의 자동화 연결을 처음 만들 때 시간이 걸린다. 재시도 횟수와 간격이 부족했다.
+- 조치: 연결 생성 실패일 때만 2초 간격으로 세 번까지 시도한다(tree·tap·type). 요소를 못 찾는 실패는 다시 시도하지 않는다. 시뮬레이터를 끈 상태에서 run → tree가 바로 성공하는 것을 확인했다.
+- 상태: 반영됨 (feature/unit-10-ui-check)
+
 ### 2026-11-08 — Xcode 27에서 테스트 실패의 위치(`파일:줄`)가 빠진다
 - 프로젝트·작업: MotoTrace 시험장, macOS 27.2·Xcode 27.2로 올린 뒤 하네스 점검. CoreTracking 테스트에 일부러 실패를 넣고 `scripts/harness/test --scheme CoreTracking` 실행
 - 무슨 일이 있었나
