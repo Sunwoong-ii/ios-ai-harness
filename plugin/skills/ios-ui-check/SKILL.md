@@ -15,6 +15,7 @@ description: 시뮬레이터에서 앱을 실행해 화면을 직접 확인하�
 | 화면 요소 보기 | `scripts/harness/ui tree` |
 | 누르기 | `scripts/harness/ui tap --id 식별자` / `scripts/harness/ui tap --label 라벨` |
 | 입력란에 입력 | `scripts/harness/ui type "텍스트"` (먼저 입력란을 누른다. 한글도 된다) |
+| 슬라이더 옮기기 | `scripts/harness/ui slider --id 식별자 0~100` (스위치는 `tap`) |
 | 스크린샷 | `scripts/harness/ui shot 이름` → 출력된 경로를 Read 도구로 연다 |
 
 `ui tree`는 요소마다 `타입 "라벨" #식별자 =값 (비활성) @x,y 너비x높이`를 한 줄씩 보여준다.

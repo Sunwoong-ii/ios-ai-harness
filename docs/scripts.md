@@ -109,10 +109,11 @@ scripts/harness/ui shot 로그인               # 스크린샷 → .harness/out/
 scripts/harness/ui tap --id loginButton      # 접근성 식별자로 누르기
 scripts/harness/ui tap --label 로그인         # 접근성 라벨로 누르기
 scripts/harness/ui type "북한강 라이딩"       # 누른 입력란에 붙여 넣기
+scripts/harness/ui slider --id volumeSlider 50   # 슬라이더를 범위의 50% 위치로
 ```
 
 - run으로 실행한 시뮬레이터(설정의 `destination`)를 다룬다. 꺼져 있으면 run을 먼저 실행하라고 안내한다.
-- tree·tap·type은 AXe가 필요하다(`brew install cameroncooke/axe/axe`, 1.8.0 이상). 없으면 설치 명령을 보여주고 멈춘다. shot은 simctl만 쓴다. 왜 AXe인지는 [ADR 0005](decisions/0005-ui-observation.md)에 있다.
+- tree·tap·type·slider는 AXe가 필요하다(`brew install cameroncooke/axe/axe`, 1.8.0 이상). 없으면 설치 명령을 보여주고 멈춘다. shot은 simctl만 쓴다. 왜 AXe인지는 [ADR 0005](decisions/0005-ui-observation.md)에 있다.
 - **tree**: 접근성 트리를 요소마다 한 줄로 줄인다. 원본(`.harness/out/ui/tree.json`)은 화면 하나에 수백 KB라서 그대로 보여주지 않는다.
   ```
   · 화면 요소 9개 · 원본: .harness/out/ui/tree.json
@@ -133,6 +134,9 @@ scripts/harness/ui type "북한강 라이딩"       # 누른 입력란에 붙여
   - 시뮬레이터 클립보드의 내용이 바뀐다.
   - 입력란에 실제로 들어갔는지는 확인하지 않는다(비밀번호 칸은 값이 가려져서 확인할 수 없다). `ui tree`로 본다.
   - 출력에는 입력 내용 대신 글자 수만 쓴다(테스트 계정 비밀번호 등).
+- **slider**: 슬라이더는 눌러서는 값이 바뀌지 않는다. 식별자나 라벨로 찾아 범위의 위치(0~100%)로 옮긴다.
+  - 정해진 단위로만 움직이는 슬라이더는 요청한 위치 근처에서 멈추고 실패로 보고된다. 실제 값은 `ui tree`로 본다.
+  - 스위치는 `tap`으로 켜고 끈다. 스테퍼는 +/− 버튼을 `tap`한다.
 - 좌표로 누르는 명령은 두지 않았다. 기기와 레이아웃에 따라 바뀌어서다. 스와이프·스크롤 같은 동작은 필요한 일이 관찰되면 추가한다.
 
 ## 프로젝트 시나리오

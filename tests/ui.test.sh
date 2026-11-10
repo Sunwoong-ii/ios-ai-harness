@@ -162,6 +162,11 @@ case "$1" in
       exit 1
     fi ;;
   type) echo "typed $(cat)" >> "$CALLS" ;;
+  slider)
+    if [ -n "${FAKE_SLIDER_FAIL:-}" ]; then
+      echo "Error: Slider value did not reach requested value 10 after direct drag." >&2
+      exit 1
+    fi ;;
 esac
 EOF
 chmod +x "$work/scripts/build" "$work/scripts/run" "$work/scripts/ui" "$work/bin/xcodebuild" "$work/bin/xcrun" "$work/axe"
@@ -263,5 +268,19 @@ assert_eq "ui type: 텍스트가 없으면 인자 오류(2)" "2" "$code"
 
 if out="$(run_fake ui swipe)"; then code=0; else code=$?; fi
 assert_eq "ui: 모르는 명령은 인자 오류(2)" "2" "$code"
+
+out="$(run_fake ui slider --id leanAngleThresholdSlider 80)"
+assert_eq "ui slider: 식별자로 위치(%) 지정" "✓ ui slider #leanAngleThresholdSlider → 80% (바뀐 값은 ui tree로 확인)" "$out"
+assert_eq "ui slider: 슬라이더가 나타날 때까지 기다린다" "1" "$(called 'axe slider --id leanAngleThresholdSlider --value 80 --udid SIM1 --wait-timeout 5')"
+assert_eq "ui slider: 라벨과 소수 위치" '✓ ui slider "뱅킹각 기준" → 12.5% (바뀐 값은 ui tree로 확인)' "$(run_fake ui slider --label "뱅킹각 기준" 12.5)"
+if out="$(FAKE_SLIDER_FAIL=1 run_fake ui slider --label "급가감속 기준" 10)"; then code=0; else code=$?; fi
+assert_eq "ui slider: 단위가 있는 슬라이더 실패는 tree로 확인하라고 안내" '1 ✗ ui slider "급가감속 기준" 실패
+  Slider value did not reach requested value 10 after direct drag.
+  실제 값은 ui tree로 확인한다 (단위가 정해진 슬라이더는 요청한 위치 근처에서 멈춘다)' "$code $out"
+for bad in "--label 볼륨 101" "--label 볼륨 -5" "--label 볼륨 abc" "--label 볼륨" "볼륨 50"; do
+  # shellcheck disable=SC2086
+  if run_fake ui slider $bad > /dev/null; then code=0; else code=$?; fi
+  assert_eq "ui slider: 잘못된 인자는 인자 오류(2): $bad" "2" "$code"
+done
 
 finish
