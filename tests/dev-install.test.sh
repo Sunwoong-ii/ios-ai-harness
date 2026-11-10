@@ -49,6 +49,24 @@ axe_todo() { printf '%s\n' "$1" | grep -c 'AXe가 없다' || true; }
 assert_eq "axe: 없으면 설치 명령을 알린다" "1" "$(axe_todo "$(PATH=/usr/bin:/bin "$install" "$p")")"
 assert_eq "axe: 있으면 알리지 않는다" "0" "$(axe_todo "$(HARNESS_AXE=/usr/bin/true "$install" "$p")")"
 
+# --- 워크트리: 플러그인 설정(settings.local.json)은 git으로 따라가지 않는다 -------------------
+q="$work/slots"
+new_project "$q"
+commit() { git -C "$q" add -A && git -C "$q" -c user.name=t -c user.email=t@t commit -q -m "$1"; }
+commit base
+"$install" "$q" > /dev/null
+commit harness
+git -C "$q" worktree add -q --detach "$work/wt-old" HEAD~1   # 하네스를 들이기 전 커밋
+git -C "$q" worktree add -q -b feature "$work/wt-new"          # 하네스가 있는 커밋
+out="$("$install" "$q")"
+worktree_todo() { printf '%s\n' "$1" | grep '플러그인(훅·리뷰어·스킬)이 꺼져' || true; }
+case "$(worktree_todo "$out")" in *wt-new*) ok=yes ;; *) ok=no ;; esac
+assert_eq "worktree: 하네스는 있는데 플러그인이 꺼진 워크트리를 알린다" "yes" "$ok"
+case "$(worktree_todo "$out")" in *wt-old*) ok=yes ;; *) ok=no ;; esac
+assert_eq "worktree: 하네스가 없는 워크트리는 알리지 않는다" "no" "$ok"
+"$install" "$work/wt-new" > /dev/null
+assert_eq "worktree: 모든 워크트리에서 켜지면 알리지 않는다" "" "$(worktree_todo "$("$install" "$q")")"
+
 # --- 관리 블록이 있는 AGENTS.md: 프로젝트 영역은 지키고 블록만 바꾼다 --------------------------
 printf '%s\n' '# Sample' '' '우리 프로젝트 소개' '<!-- harness:begin 옛날 -->' '옛 블록' '<!-- harness:end -->' '' '블록 뒤 프로젝트 메모' > "$p/AGENTS.md"
 "$install" "$p" > /dev/null
