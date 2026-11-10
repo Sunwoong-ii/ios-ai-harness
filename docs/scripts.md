@@ -95,7 +95,8 @@ scripts/harness/run --scheme FeatureADemo    # 다른 스킴의 앱(모듈 Demo 
 - 순서: build → 빌드 설정에서 앱 경로 읽기 → 시뮬레이터가 꺼져 있으면 부팅 → 설치 → 실행
   - 항상 build부터 한다. 코드를 고친 뒤 예전 빌드를 띄워 확인하는 실수를 막기 위해서다. 바뀐 게 없으면 빌드는 몇 초면 끝난다.
   - 앱 경로는 결과물 폴더를 뒤지지 않고 `xcodebuild -showBuildSettings`에서 읽는다. Demo 앱처럼 `.app`이 여럿인 프로젝트가 있어서다. 번들 ID는 빌드된 앱의 Info.plist에서 읽는다.
-  - 이미 실행 중이면 종료하고 다시 실행한다. 시뮬레이터 창은 열지 않는다. 보고 싶으면 Simulator 앱을 연다.
+  - 이미 실행 중이면 종료하고 다시 실행한다. 시뮬레이터 창은 열지 않는다. 보고 싶으면 Xcode 27부터는 Device Hub(`Xcode.app/Contents/Applications/DeviceHub.app`), 그 전에는 Simulator 앱을 연다.
+  - 창을 여는 일은 run이 하지 않는다. Xcode 27에서 Simulator 앱이 없어져서 `open -a Simulator`가 실패한다.
 - 성공: build 줄 다음에 `✓ run MotoTrace · iPhone 17 Pro · 3s · 앱 로그: .harness/out/app.log`
 - 앱 로그(`.harness/out/app.log`): 앱의 표준 출력·에러다. `OS_ACTIVITY_DT_MODE`를 켜서 Xcode 콘솔처럼 `Logger`·`os_log` 출력도 함께 남는다.
 - 실패: 빌드가 실패하면 build의 출력과 종료 코드로 끝난다. 설치·실행이 실패하면 `run.log`의 끝부분을 보여준다.
