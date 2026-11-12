@@ -41,7 +41,10 @@ export HARNESS_ROOT="$root"
 start=$SECONDS
 
 app_scheme="$(cfg .app.scheme)"
+# app.path가 비어 있으면 루트로 본다. 모듈에 속하지 않은 파일은 모두 앱의 변경이 된다.
+# xcodeproj 앱은 소스가 루트 바로 아래(예: WorkoutRest/)에 있어서다. 덜 테스트하는 것보다 더 테스트하는 쪽이 안전하다.
 app_path="$(cfg .app.path)"
+app_path="${app_path:-.}"
 app_tests="$(jq -r '.app.unitTestTargets // [] | join(", ")' "$config")"
 manifest="$(cfg .modules.manifest)"
 scheme_rule="$(cfg .modules.scheme)"
@@ -89,7 +92,7 @@ module_of() {
 all_module_dirs() {
   (cd "$root" && find . -name "$manifest" -not -path '*/Derived/*' -not -path '*/.build/*' \
       -not -path './Tuist/*' -not -path './.harness/*' 2>/dev/null \
-    | sed -e 's|^\./||' -e "s|/$manifest\$||" | { grep -vxE "$manifest|${app_path:-.}" || true; } | LC_ALL=C sort || true)
+    | sed -e 's|^\./||' -e "s|/$manifest\$||" | { grep -vxF -e "$manifest" -e "$app_path" || true; } | LC_ALL=C sort || true)
 }
 
 test_app=0

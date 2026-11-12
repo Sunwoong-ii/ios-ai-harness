@@ -150,4 +150,24 @@ jq -n '{
 echo '// changed' >> "$p/App/App.swift"
 assert_eq "plan: 모듈 구조가 없으면 모든 변경을 앱 변경으로 본다" "  test 앱 (App: AppTests)" "$(plan | sed -n 3p)"
 
+# --- verify --plan (xcodeproj 앱 + 하위 폴더의 SPM 로컬 패키지) ---------------------------
+# 앱 소스는 루트 바로 아래에 있고 app.path는 비어 있다. 패키지 이름(Modules)은 폴더 이름(Packages)과 다르다.
+p="$work/xcodeproj-spm"
+mkdir -p "$p/.harness" "$p/App" "$p/Packages/Sources/Core" "$p/Packages/Tests/CoreTests"
+echo '// source' > "$p/App/App.swift"
+echo '// manifest' > "$p/Packages/Package.swift"
+echo '// source' > "$p/Packages/Sources/Core/Core.swift"
+echo '// test' > "$p/Packages/Tests/CoreTests/CoreTests.swift"
+jq -n '{
+  schemaVersion: 1, generator: "xcodeproj", commands: { install: null, generate: null },
+  workspace: null, project: "App.xcodeproj",
+  app: { scheme: "App", path: null, bundleId: null, unitTestTargets: ["AppTests"] },
+  destination: { simulator: "iPhone 17 Pro", os: "latest" },
+  modules: { manifest: "Package.swift", scheme: "Modules-Package", testsDir: "Tests" } }' > "$p/.harness/project.json"
+(cd "$p" && git init -q -b main && git add -A && git -c user.name=t -c user.email=t@t commit -qm init)
+
+echo '// changed' >> "$p/App/App.swift"
+assert_eq "plan: app.path가 비어 있으면 모듈 밖 파일을 앱 변경으로 본다" "  test 앱 (App: AppTests)" "$(plan | sed -n 3p)"
+reset
+
 finish
