@@ -116,6 +116,39 @@ assert_eq "xcproj: 앱 스킴은 앱 타깃 이름" '"Sample"' "$(field "$out" .
 assert_eq "xcproj: 번들 ID는 Debug 구성 값을 먼저 쓴다" '"com.example.Sample.debug"' "$(field "$out" .app.bundleId)"
 assert_eq "xcproj: UI 테스트는 빼고 단위 테스트만" '["SampleTests"]' "$(field "$out" .app.unitTestTargets)"
 
+# --- xcodeproj 앱 + 하위 폴더의 SPM 로컬 패키지 ----------------------------------------
+# 패키지 이름(AppModules)은 폴더 이름(Packages)과 다르다. Package( 앞의 다른 name: 인자는 건너뛴다.
+p="$work/xcodeproj-spm"
+write_pbxproj "$p/App.xcodeproj" "com.example.App"
+mkdir -p "$p/Packages/.build/checkouts/dep" "$p/Packages/Tests"
+cat > "$p/Packages/Package.swift" <<'EOF'
+import PackageDescription
+let tca: Target.Dependency = .product(name: "ComposableArchitecture", package: "swift-composable-architecture")
+let package = Package(
+    name: "AppModules",
+    products: [.library(name: "Core", targets: ["Core"])]
+)
+EOF
+echo 'let package = Package(name: "Dependency")' > "$p/Packages/.build/checkouts/dep/Package.swift"
+
+out="$(run_detect "$p")"
+assert_eq "spm: 패키지 폴더를 모듈로, 스킴은 <패키지 이름>-Package" \
+  '{"manifest":"Package.swift","scheme":"AppModules-Package","testsDir":"Tests"}' "$(field "$out" .modules)"
+
+# 이름이 문자열이 아니면 읽지 않는다.
+printf 'let package = Package(\n    name: packageName,\n    products: [.library(name: "Core", targets: ["Core"])]\n)\n' > "$p/Packages/Package.swift"
+out="$(run_detect "$p")"
+assert_eq "spm: 패키지 이름을 못 읽으면 modules는 null" 'null' "$(field "$out" .modules)"
+
+# 패키지가 여럿이면 스킴 규칙 하나로 나타낼 수 없다.
+echo 'let package = Package(name: "AppModules")' > "$p/Packages/Package.swift"
+mkdir -p "$p/Tools"
+echo 'let package = Package(name: "Tools")' > "$p/Tools/Package.swift"
+out="$("$detect" "$p" 2> "$work/err")"
+assert_eq "spm: 패키지가 여럿이면 modules는 null" 'null' "$(field "$out" .modules)"
+if grep -q 'SPM 로컬 패키지가 여럿입니다: Packages Tools' "$work/err"; then warned=1; else warned=0; fi
+assert_eq "spm: 패키지가 여럿이면 경고한다" "1" "$warned"
+
 p="$work/no-project-file"
 mkdir -p "$p/Sample.xcodeproj"
 "$detect" "$p" > /dev/null 2> "$work/err"
