@@ -127,7 +127,9 @@ EOF
   modules="$(printf '%s' "$modules" | { grep -v '^$' || true; } | LC_ALL=C sort -u)"
 fi
 
-# 실행 계획: "표시이름<TAB>스킴" 줄. 스킴이 비어 있으면 앱 단위 테스트(test 기본 동작)다.
+# 실행 계획: "표시이름<TAB>스킴<TAB>패키지 폴더" 줄. 스킴이 비어 있으면 앱 단위 테스트(test 기본 동작)다.
+# 모듈이 SPM 패키지(manifest가 Package.swift)면 패키지 폴더에서 테스트한다(test --package).
+# 앱 프로젝트에 연결했는지와 상관없이 같은 방법으로 돌릴 수 있어서다.
 steps=""
 untested=""
 if [ "$test_app" = 1 ] && [ -n "$app_tests" ]; then
@@ -138,7 +140,9 @@ if [ -n "$modules" ]; then
     name="$(basename "$dir")"
     scheme="${scheme_rule//\{dir\}/$name}"
     if module_has_tests "$dir" "$scheme" "$tests_dir"; then
-      steps="$steps$name"$'\t'"$scheme"$'\n'
+      package=""
+      if [ "$manifest" = Package.swift ]; then package="$dir"; fi
+      steps="$steps$name"$'\t'"$scheme"$'\t'"$package"$'\n'
     else
       untested="$untested $name"
     fi
@@ -154,10 +158,12 @@ if [ "$plan" = 1 ]; then
     echo "· verify 계획 · 바뀐 파일 $(printf '%s\n' "$changed" | wc -l | tr -d ' ')개"
   fi
   echo "  build $app_scheme"
-  while IFS=$'\t' read -r label scheme; do
+  while IFS=$'\t' read -r label scheme package; do
     if [ -z "$label" ]; then continue; fi
     if [ -z "$scheme" ]; then
       echo "  test 앱 ($app_scheme: $app_tests)"
+    elif [ -n "$package" ]; then
+      echo "  test $label ($scheme, 패키지 폴더 $package에서)"
     else
       echo "  test $label ($scheme)"
     fi
@@ -182,10 +188,16 @@ fi
 passed=""
 failed=""
 first_failure=0
-while IFS=$'\t' read -r label scheme; do
+while IFS=$'\t' read -r label scheme package; do
   if [ -z "$label" ]; then continue; fi
   set +e
-  if [ -z "$scheme" ]; then "$here/test"; else "$here/test" --scheme "$scheme"; fi
+  if [ -z "$scheme" ]; then
+    "$here/test"
+  elif [ -n "$package" ]; then
+    "$here/test" --package "$package" --scheme "$scheme"
+  else
+    "$here/test" --scheme "$scheme"
+  fi
   rc=$?
   set -e
   if [ "$rc" -eq 0 ]; then

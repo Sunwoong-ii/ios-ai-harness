@@ -170,4 +170,8 @@ echo '// changed' >> "$p/App/App.swift"
 assert_eq "plan: app.path가 비어 있으면 모듈 밖 파일을 앱 변경으로 본다" "  test 앱 (App: AppTests)" "$(plan | sed -n 3p)"
 reset
 
+echo '// changed' >> "$p/Packages/Sources/Core/Core.swift"
+assert_eq "plan: SPM 패키지 모듈은 패키지 폴더에서 테스트한다" "  test Packages (Modules-Package, 패키지 폴더 Packages에서)" "$(plan | sed -n 3p)"
+reset
+
 finish
