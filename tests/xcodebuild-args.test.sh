@@ -13,6 +13,10 @@ mkdir -p "$work/bin"
 cat > "$work/bin/xcodebuild" <<'EOF'
 #!/bin/bash
 echo "cwd=$PWD $*" >> "$CALLS"
+if [ -n "${FAKE_MACRO_ERROR:-}" ] && ! printf '%s\n' "$@" | grep -qx -- -skipMacroValidation; then
+  echo '/dd/SourcePackages/checkouts/swift-dependencies/Package.swift:PACKAGE-TARGET:DependenciesMacrosPlugin: error: Macro "DependenciesMacrosPlugin" from package "swift-dependencies" must be enabled before it can be used'
+  exit 65
+fi
 EOF
 cat > "$work/bin/xcrun" <<'EOF'
 #!/bin/bash
@@ -56,5 +60,20 @@ if out="$(run_script test --package Packages 2>&1)"; then code=0; else code=$?; 
 assert_eq "package: 스킴이 없으면 설정 오류(2)" "2" "$code"
 if out="$(run_script test --package Nowhere --scheme X 2>&1)"; then code=0; else code=$?; fi
 assert_eq "package: Package.swift가 없으면 설정 오류(2)" "2" "$code"
+
+# --- skipMacroValidation: 매크로 신뢰 확인을 건너뛰는 옵션은 프로젝트가 켤 때만 붙인다 -------------
+run_script build > /dev/null
+assert_eq "macro: 기본은 붙이지 않는다" "no" "$(has_arg -skipMacroValidation)"
+
+if out="$(FAKE_MACRO_ERROR=1 run_script build)"; then code=0; else code=$?; fi
+assert_eq "macro: 매크로 신뢰 확인에 막히면 빌드 실패" "65" "$code"
+case "$out" in *'"skipMacroValidation": true를 넣습니다'*) ok=yes ;; *) ok=no ;; esac
+assert_eq "macro: 막히면 사용자에게 알리라고 안내한다" "yes" "$ok"
+
+jq '.skipMacroValidation = true' "$p/.harness/project.json" > "$work/c.json" && mv "$work/c.json" "$p/.harness/project.json"
+FAKE_MACRO_ERROR=1 run_script build > /dev/null
+assert_eq "macro: 켜면 build에 붙인다" "yes" "$(has_arg -skipMacroValidation)"
+FAKE_MACRO_ERROR=1 run_script test --package Packages --scheme Modules-Package > /dev/null
+assert_eq "macro: 켜면 test --package에도 붙인다" "yes" "$(has_arg -skipMacroValidation)"
 
 finish

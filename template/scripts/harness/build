@@ -33,6 +33,7 @@ done
 
 harness_init
 harness_container_args
+harness_extra_args
 harness_destination
 scheme="${scheme:-$(cfg .app.scheme)}"
 [ -n "$scheme" ] || harness_die "설정에 app.scheme이 없습니다"
@@ -50,7 +51,7 @@ xcodebuild build "${container_args[@]}" \
   -destination "$destination" \
   -derivedDataPath "$derived_data" \
   -resultBundlePath "$result" \
-  -quiet > "$log" 2>&1
+  -quiet ${extra_args[@]+"${extra_args[@]}"} > "$log" 2>&1
 code=$?
 set -e
 elapsed=$((SECONDS - start))

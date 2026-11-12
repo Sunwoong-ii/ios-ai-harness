@@ -135,6 +135,15 @@ out="$(run_detect "$p")"
 assert_eq "spm: 패키지 폴더를 모듈로, 스킴은 <패키지 이름>-Package" \
   '{"manifest":"Package.swift","scheme":"AppModules-Package","testsDir":"Tests"}' "$(field "$out" .modules)"
 
+assert_eq "spm: 매크로 확인 건너뛰기는 켜지 않는다" 'false' "$(field "$out" .skipMacroValidation)"
+
+# swift-syntax를 받는 프로젝트(매크로 패키지)는 알리기만 한다.
+printf '{"pins":[{"identity":"swift-syntax"}]}\n' > "$p/Packages/Package.resolved"
+out="$("$detect" "$p" 2> "$work/err")"
+if grep -q '매크로 패키지를 씁니다 (Packages/Package.resolved' "$work/err"; then noted=1; else noted=0; fi
+assert_eq "spm: 매크로 패키지를 쓰면 알린다" "1" "$noted"
+assert_eq "spm: 매크로 패키지가 있어도 켜지 않는다" 'false' "$(field "$out" .skipMacroValidation)"
+
 # 이름이 문자열이 아니면 읽지 않는다.
 printf 'let package = Package(\n    name: packageName,\n    products: [.library(name: "Core", targets: ["Core"])]\n)\n' > "$p/Packages/Package.swift"
 out="$(run_detect "$p")"

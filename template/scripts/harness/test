@@ -40,6 +40,7 @@ done
 
 harness_init
 harness_destination
+harness_extra_args
 run_dir="$root"   # xcodebuild를 실행할 폴더
 if [ -n "$package_dir" ]; then
   [ -n "$scheme" ] || harness_die "--package에는 --scheme이 필요합니다 (패키지 폴더에서 xcodebuild -list로 확인)"
@@ -95,7 +96,7 @@ set +e
   -destination "$destination" \
   -derivedDataPath "$derived_data" \
   -resultBundlePath "$result" \
-  -quiet ${only_args[@]+"${only_args[@]}"}) > "$log" 2>&1
+  -quiet ${extra_args[@]+"${extra_args[@]}"} ${only_args[@]+"${only_args[@]}"}) > "$log" 2>&1
 code=$?
 set -e
 elapsed=$((SECONDS - start))

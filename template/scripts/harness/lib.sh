@@ -42,6 +42,14 @@ cfg() {
   jq -r "($1) // empty" "$config"
 }
 
+# 프로젝트가 설정 파일에서 켠 xcodebuild 옵션을 extra_args 배열에 담는다. build·test가 부른다.
+# skipMacroValidation: 매크로 패키지(TCA 등)는 Xcode에서 신뢰를 확인받기 전에는 CLI 빌드가 막힌다.
+# 이 확인을 건너뛰는 옵션이다. 패키지 코드를 믿을지는 사람이 정할 일이라 기본은 끄고, 프로젝트가 켤 때만 붙인다.
+harness_extra_args() {
+  extra_args=()
+  if [ "$(cfg .skipMacroValidation)" = true ]; then extra_args+=(-skipMacroValidation); fi
+}
+
 # xcodebuild의 -workspace/-project 인자를 container_args 배열에 담는다.
 harness_container_args() {
   local ws pj
@@ -325,6 +333,10 @@ harness_print_build_errors() {
     fi
   else
     { grep -E 'error:|ERROR' "$log" || tail -n 20 "$log"; } | head -n 20 | sed 's/^/  /' || true
+  fi
+  # 매크로 패키지(TCA 등)는 CLI 빌드에서 매크로 신뢰 확인에 막힌다. 켜는 것은 사람이 정한다.
+  if grep -q 'must be enabled before it can be used' "$log" 2>/dev/null && [ "$(cfg .skipMacroValidation)" != true ]; then
+    echo "  매크로 사용 허가가 필요합니다. 사용자에게 알리고, 허가하면 .harness/project.json에 \"skipMacroValidation\": true를 넣습니다"
   fi
 }
 

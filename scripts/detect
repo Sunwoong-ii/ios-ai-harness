@@ -644,6 +644,26 @@ if [ "$generator" = "xcodeproj" ] || [ "$generator" = "xcodegen" ]; then
   fi
 fi
 
+# --- 매크로 패키지 ---------------------------------------------------------------
+# swift-syntax를 받는 프로젝트는 매크로 패키지(TCA 등)를 쓴다. CLI 빌드는 Xcode에서 매크로 신뢰를 확인받기 전에는 막힌다.
+# 확인을 건너뛰는 skipMacroValidation은 패키지 코드를 믿을지 정하는 일이라 detect가 켜지 않고 알리기만 한다.
+resolved_with_macros="$(
+  cd "$project_dir" \
+    && find . -name Package.resolved \
+      -not -path '*/.build/*' \
+      -not -path '*/SourcePackages/*' \
+      -not -path '*/Derived/*' 2> /dev/null \
+    | while IFS= read -r resolved; do
+        if grep -q 'swift-syntax' "$resolved"; then printf '%s\n' "${resolved#./}"; fi
+      done \
+    | head -n 1 \
+    || true
+)"
+if [ -n "$resolved_with_macros" ]; then
+  note "매크로 패키지를 씁니다 ($resolved_with_macros에 swift-syntax)." \
+    "빌드가 'Macro … must be enabled'로 막히면 사람이 확인한 뒤 skipMacroValidation을 true로 바꾸세요"
+fi
+
 # --- 시뮬레이터 -------------------------------------------------------------
 # 결과: destination.simulator
 # 가장 최신 iOS 런타임의 iPhone 중 번호가 가장 큰 Pro 모델, 없으면 첫 iPhone을 고른다.
@@ -727,7 +747,8 @@ draft_json="$(
         simulator: ($simulator | orNull),
         os: "latest"
       },
-      modules: $modules
+      modules: $modules,
+      skipMacroValidation: false
     }'
 )"
 
