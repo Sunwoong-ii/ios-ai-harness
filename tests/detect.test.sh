@@ -95,6 +95,33 @@ write_pbxproj "$p/Sample.xcodeproj" '"$(APP_BUNDLE_ID)"'
 out="$(run_detect "$p")"
 assert_eq "xcodeproj-var: 변수 번들 ID는 null" 'null' "$(field "$out" .app.bundleId)"
 
+# --- Xcode 27의 새 프로젝트 형식 (project.pbxproj 없이 project.xcproj만) ----------------
+# 끝 쉼표가 있는 JSON이다. 종류는 접두 없이 쓰고, 구성별 값은 [config=Debug]를 붙인다.
+p="$work/xcproj"
+mkdir -p "$p/Sample.xcodeproj"
+cat > "$p/Sample.xcodeproj/project.xcproj" <<'EOF'
+{
+  "configurations": [ "Debug", "Release", ],
+  "targets": [
+    { "name": "Sample", "product-type": "application",
+      "build-settings": { "PRODUCT_BUNDLE_IDENTIFIER[config=Debug]": "com.example.Sample.debug", "PRODUCT_BUNDLE_IDENTIFIER": "com.example.Sample", }, },
+    { "name": "SampleTests", "product-type": "bundle.unit-test", "build-settings": { "PRODUCT_BUNDLE_IDENTIFIER": "com.example.SampleTests", }, },
+    { "name": "SampleUITests", "product-type": "bundle.ui-testing", },
+  ],
+}
+EOF
+
+out="$(run_detect "$p")"
+assert_eq "xcproj: 앱 스킴은 앱 타깃 이름" '"Sample"' "$(field "$out" .app.scheme)"
+assert_eq "xcproj: 번들 ID는 Debug 구성 값을 먼저 쓴다" '"com.example.Sample.debug"' "$(field "$out" .app.bundleId)"
+assert_eq "xcproj: UI 테스트는 빼고 단위 테스트만" '["SampleTests"]' "$(field "$out" .app.unitTestTargets)"
+
+p="$work/no-project-file"
+mkdir -p "$p/Sample.xcodeproj"
+"$detect" "$p" > /dev/null 2> "$work/err"
+if grep -q 'project.pbxproj도 project.xcproj도 없습니다' "$work/err"; then warned=1; else warned=0; fi
+assert_eq "no-project-file: 프로젝트 파일이 없으면 경고한다" "1" "$warned"
+
 # --- XcodeGen ---------------------------------------------------------------
 p="$work/xcodegen"
 mkdir -p "$p"
