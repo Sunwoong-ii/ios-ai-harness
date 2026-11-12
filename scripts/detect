@@ -581,31 +581,8 @@ fi
 # --- 모듈 (SPM 로컬 패키지) -----------------------------------------------------
 # 결과: modules
 # xcodeproj·XcodeGen 앱의 하위 폴더에 Package.swift가 있으면 그 폴더를 모듈 하나로 본다 (예: Packages/).
-# 패키지 스킴은 보통 "<패키지 이름>-Package"이고, 패키지 이름은 폴더 이름과 다를 수 있다.
-# 그래서 {dir} 규칙 대신 패키지 이름으로 만든 스킴을 그대로 적는다.
-
-# Package.swift($1)의 패키지 이름. Package( 바로 다음 인자가 name: "..."일 때만 읽는다. 못 읽으면 빈 문자열
-#   예: let package = Package(\n    name: "WorkoutRestModules", → WorkoutRestModules
-package_name() {
-  awk '
-    !in_package {
-      i = index($0, "Package(")
-      if (i == 0) next
-      in_package = 1
-      $0 = substr($0, i + 8)
-    }
-    {
-      sub(/^[[:space:]]+/, "")
-      if ($0 == "") next
-      if (match($0, /^name:[[:space:]]*"[^"]+"/)) {
-        value = substr($0, RSTART, RLENGTH)
-        sub(/^name:[[:space:]]*"/, "", value)
-        sub(/"$/, "", value)
-        print value
-      }
-      exit
-    }' "$1" 2> /dev/null || true
-}
+# 스킴은 적지 않는다(null). 패키지 스킴 이름은 제품·타깃 수에 따라 "<패키지 이름>-Package"이거나 패키지 이름이라,
+# build·test가 실행할 때 패키지 폴더의 스킴 목록에서 고른다. 그래서 패키지가 여럿이어도 규칙 하나로 된다.
 
 if [ "$generator" = "xcodeproj" ] || [ "$generator" = "xcodegen" ]; then
   # 패키지 폴더 목록. 한 줄에 하나, 루트 기준 (예: Packages). 의존성 체크아웃·빌드 폴더는 뺀다.
@@ -621,26 +598,10 @@ if [ "$generator" = "xcodeproj" ] || [ "$generator" = "xcodegen" ]; then
       | sort \
       || true
   )"
-  package_count=0
   if [ -n "$package_dirs" ]; then
-    package_count="$(printf '%s\n' "$package_dirs" | wc -l | tr -d ' ')"
-  fi
-
-  if [ "$package_count" -gt 1 ]; then
-    # 스킴 규칙 하나로 여러 패키지의 스킴을 나타낼 수 없다.
-    warn "SPM 로컬 패키지가 여럿입니다: $(printf '%s ' $package_dirs)" \
-      "— modules를 비워 둡니다. 모듈 테스트가 필요하면 직접 채우세요"
-  elif [ "$package_count" = 1 ]; then
-    package_dir="$package_dirs"
-    package="$(package_name "$project_dir/$package_dir/Package.swift")"
-    if [ -z "$package" ]; then
-      warn "$package_dir/Package.swift에서 패키지 이름을 읽지 못했습니다 — modules를 직접 채우세요"
-    else
-      modules_json="$(jq -cn --arg scheme "$package-Package" \
-        '{manifest: "Package.swift", scheme: $scheme, testsDir: "Tests"}')"
-      note "모듈: SPM 로컬 패키지 $package_dir (스킴 $package-Package로 추정." \
-        "패키지 폴더에서 xcodebuild -list로 확인할 수 있습니다)"
-    fi
+    modules_json='{"manifest":"Package.swift","scheme":null,"testsDir":"Tests"}'
+    note "모듈: SPM 로컬 패키지 $(printf '%s\n' "$package_dirs" | wc -l | tr -d ' ')개 ($(printf '%s\n' "$package_dirs" | paste -sd ',' - | sed 's/,/, /g'))." \
+      "스킴은 build·test가 패키지 폴더에서 고릅니다"
   fi
 fi
 

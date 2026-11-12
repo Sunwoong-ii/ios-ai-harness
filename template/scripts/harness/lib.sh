@@ -64,6 +64,52 @@ harness_container_args() {
   fi
 }
 
+# --- SPM 로컬 패키지 (build·test --package) --------------------------------------
+
+# xcodebuild -list JSON(stdin)에서 패키지 스킴을 고른다. 고르지 못하면 빈 문자열.
+# Xcode는 제품마다 스킴을 만들고, 제품·타깃이 여럿이면 전체를 묶은 "<패키지 이름>-Package"를 더 만든다.
+# 그래서 -Package 스킴이 있으면 그것을, 없고 스킴이 하나뿐이면 그것을 쓴다.
+pick_package_scheme() {
+  jq -r '
+    (.workspace.schemes // .project.schemes // []) as $schemes
+    | ($schemes | map(select(endswith("-Package")))) as $whole
+    | if ($whole | length) == 1 then $whole[0]
+      elif ($schemes | length) == 1 then $schemes[0]
+      else empty end'
+}
+
+# 패키지 폴더($1, 상대 경로는 루트 기준)에서 실행하도록 run_dir·container_args·derived_data를 바꾼다.
+# 패키지 폴더에서 -project/-workspace 없이 실행하면 xcodebuild가 Package.swift를 읽는다.
+# 그래서 앱 프로젝트에 아직 연결하지 않은 패키지도 빌드·테스트할 수 있다.
+# scheme이 비어 있으면 그 폴더의 스킴 목록에서 고른다. harness_init 뒤에 부른다.
+harness_use_package() {
+  local dir="$1" rel json schemes
+  case "$dir" in /*) ;; *) dir="$root/$dir" ;; esac
+  [ -f "$dir/Package.swift" ] || harness_die "Package.swift가 없습니다: $dir"
+  package_dir="$(cd "$dir" && pwd)"
+  run_dir="$package_dir"
+  container_args=()
+  # 앱 프로젝트와 패키지는 서로 다른 워크스페이스다. 같은 빌드 폴더를 번갈아 쓰지 않게 패키지마다 따로 둔다.
+  # 예: <앱 DerivedData>-Packages, 루트의 패키지면 <앱 DerivedData>-package
+  rel="${package_dir#"$root"}"
+  rel="${rel#/}"
+  derived_data="$derived_data-$(printf '%s' "${rel:-package}" | tr '/' '-')"
+
+  [ -z "$scheme" ] || return 0
+  if ! json="$(cd "$package_dir" && xcodebuild -list -json 2> "$out_dir/package-list.log")"; then
+    {
+      echo "harness: ${rel:-.}의 스킴 목록을 읽지 못했습니다 (xcodebuild -list). Package.swift를 확인하세요"
+      { grep -E 'error' "$out_dir/package-list.log" || true; } | head -n 5 | sed 's/^/  /'
+    } >&2
+    exit 2
+  fi
+  scheme="$(printf '%s' "$json" | pick_package_scheme)"
+  if [ -z "$scheme" ]; then
+    schemes="$(printf '%s' "$json" | jq -r '(.workspace.schemes // .project.schemes // []) | join(", ")')"
+    harness_die "${rel:-.}에서 패키지 스킴을 하나로 정하지 못했습니다 (스킴: ${schemes:-없음}). --scheme으로 고르세요"
+  fi
+}
+
 # simctl JSON(stdin)에서 이름($1)과 OS($2: latest 또는 버전)에 맞는 기기의 UDID를 찾는다.
 # 같은 이름이 여러 런타임에 있으면 가장 최신 OS를 고른다.
 pick_simulator() {

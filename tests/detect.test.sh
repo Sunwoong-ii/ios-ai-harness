@@ -117,24 +117,18 @@ assert_eq "xcproj: 번들 ID는 Debug 구성 값을 먼저 쓴다" '"com.example
 assert_eq "xcproj: UI 테스트는 빼고 단위 테스트만" '["SampleTests"]' "$(field "$out" .app.unitTestTargets)"
 
 # --- xcodeproj 앱 + 하위 폴더의 SPM 로컬 패키지 ----------------------------------------
-# 패키지 이름(AppModules)은 폴더 이름(Packages)과 다르다. Package( 앞의 다른 name: 인자는 건너뛴다.
+# 스킴은 제품·타깃 수에 따라 달라서 적지 않는다. 의존성 체크아웃 안의 Package.swift는 모듈이 아니다.
 p="$work/xcodeproj-spm"
 write_pbxproj "$p/App.xcodeproj" "com.example.App"
 mkdir -p "$p/Packages/.build/checkouts/dep" "$p/Packages/Tests"
-cat > "$p/Packages/Package.swift" <<'EOF'
-import PackageDescription
-let tca: Target.Dependency = .product(name: "ComposableArchitecture", package: "swift-composable-architecture")
-let package = Package(
-    name: "AppModules",
-    products: [.library(name: "Core", targets: ["Core"])]
-)
-EOF
+echo 'let package = Package(name: "AppModules")' > "$p/Packages/Package.swift"
 echo 'let package = Package(name: "Dependency")' > "$p/Packages/.build/checkouts/dep/Package.swift"
 
-out="$(run_detect "$p")"
-assert_eq "spm: 패키지 폴더를 모듈로, 스킴은 <패키지 이름>-Package" \
-  '{"manifest":"Package.swift","scheme":"AppModules-Package","testsDir":"Tests"}' "$(field "$out" .modules)"
-
+out="$("$detect" "$p" 2> "$work/err")"
+assert_eq "spm: 패키지 폴더를 모듈로, 스킴은 비워 둔다" \
+  '{"manifest":"Package.swift","scheme":null,"testsDir":"Tests"}' "$(field "$out" .modules)"
+if grep -q 'SPM 로컬 패키지 1개 (Packages)' "$work/err"; then noted=1; else noted=0; fi
+assert_eq "spm: 체크아웃 안의 패키지는 세지 않는다" "1" "$noted"
 assert_eq "spm: 매크로 확인 건너뛰기는 켜지 않는다" 'false' "$(field "$out" .skipMacroValidation)"
 
 # swift-syntax를 받는 프로젝트(매크로 패키지)는 알리기만 한다.
@@ -144,19 +138,13 @@ if grep -q '매크로 패키지를 씁니다 (Packages/Package.resolved' "$work/
 assert_eq "spm: 매크로 패키지를 쓰면 알린다" "1" "$noted"
 assert_eq "spm: 매크로 패키지가 있어도 켜지 않는다" 'false' "$(field "$out" .skipMacroValidation)"
 
-# 이름이 문자열이 아니면 읽지 않는다.
-printf 'let package = Package(\n    name: packageName,\n    products: [.library(name: "Core", targets: ["Core"])]\n)\n' > "$p/Packages/Package.swift"
-out="$(run_detect "$p")"
-assert_eq "spm: 패키지 이름을 못 읽으면 modules는 null" 'null' "$(field "$out" .modules)"
-
-# 패키지가 여럿이면 스킴 규칙 하나로 나타낼 수 없다.
-echo 'let package = Package(name: "AppModules")' > "$p/Packages/Package.swift"
+# 패키지가 여럿이어도 폴더마다 스킴을 고르니 규칙 하나로 된다.
 mkdir -p "$p/Tools"
 echo 'let package = Package(name: "Tools")' > "$p/Tools/Package.swift"
 out="$("$detect" "$p" 2> "$work/err")"
-assert_eq "spm: 패키지가 여럿이면 modules는 null" 'null' "$(field "$out" .modules)"
-if grep -q 'SPM 로컬 패키지가 여럿입니다: Packages Tools' "$work/err"; then warned=1; else warned=0; fi
-assert_eq "spm: 패키지가 여럿이면 경고한다" "1" "$warned"
+assert_eq "spm: 패키지가 여럿이어도 모듈 규칙은 같다" '"Package.swift"' "$(field "$out" .modules.manifest)"
+if grep -q 'SPM 로컬 패키지 2개 (Packages, Tools)' "$work/err"; then noted=1; else noted=0; fi
+assert_eq "spm: 찾은 패키지 폴더를 알린다" "1" "$noted"
 
 p="$work/no-project-file"
 mkdir -p "$p/Sample.xcodeproj"

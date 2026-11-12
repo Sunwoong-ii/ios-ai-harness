@@ -13,8 +13,8 @@ usage() {
   성공하면 한 줄, 실패하면 실패한 테스트와 메시지를 출력한다.
 
   --scheme 스킴   이 스킴의 테스트 액션을 실행한다 (모듈 스킴 등)
-  --package 폴더  앱 프로젝트 대신 이 폴더의 Package.swift로 실행한다. --scheme이 필요하다
-                  (보통 <패키지 이름>-Package). 앱에 아직 연결하지 않은 로컬 패키지도 테스트할 수 있다
+  --package 폴더  앱 프로젝트 대신 이 폴더의 Package.swift로 실행한다. 앱에 아직 연결하지 않은 로컬 패키지도 된다
+                  --scheme이 없으면 <패키지 이름>-Package 스킴을, 없으면 하나뿐인 스킴을 쓴다
   --only 대상      -only-testing 대상: 타깃, 타깃/클래스, 타깃/클래스/메서드. 여러 번 쓸 수 있다
   --generate      변경이 없어도 프로젝트를 다시 생성한다 (Tuist·XcodeGen)
 
@@ -43,20 +43,7 @@ harness_destination
 harness_extra_args
 run_dir="$root"   # xcodebuild를 실행할 폴더
 if [ -n "$package_dir" ]; then
-  [ -n "$scheme" ] || harness_die "--package에는 --scheme이 필요합니다 (패키지 폴더에서 xcodebuild -list로 확인)"
-  # 상대 경로는 프로젝트 루트 기준이다.
-  case "$package_dir" in /*) ;; *) package_dir="$root/$package_dir" ;; esac
-  [ -f "$package_dir/Package.swift" ] || harness_die "Package.swift가 없습니다: $package_dir"
-  package_dir="$(cd "$package_dir" && pwd)"
-  # 패키지 폴더에서 -project/-workspace 없이 실행하면 xcodebuild가 Package.swift를 읽는다.
-  run_dir="$package_dir"
-  container_args=()
-  # 앱 프로젝트와 패키지는 서로 다른 워크스페이스다. 같은 빌드 폴더를 번갈아 쓰지 않게 패키지마다 따로 둔다.
-  # 예: <앱 DerivedData>-Packages, 루트의 패키지면 <앱 DerivedData>-package
-  package_rel="${package_dir#"$root"}"
-  package_rel="${package_rel#/}"
-  package_rel="${package_rel//\//-}"
-  derived_data="$derived_data-${package_rel:-package}"
+  harness_use_package "$package_dir"
 else
   harness_container_args
 fi
