@@ -39,6 +39,9 @@ scripts/harness/build --generate         # 프로젝트를 다시 생성한 뒤 
 - 실패: 첫 에러부터 최대 5개를 `경로:줄:열: 메시지`로 보여주고, 로그와 결과 번들 경로를 붙인다.
   - 최대 개수는 `HARNESS_MAX_ERRORS`로 바꾼다.
   - 결과 번들에 에러가 없는 실패(인자 오류, 스크립트 단계 실패)는 로그의 에러 줄을 보여준다.
+- 매크로 패키지(TCA, swift-dependencies 등)는 Xcode에서 매크로 신뢰를 확인받기 전에는 CLI 빌드가 "Macro … must be enabled"로 막힌다.
+  - 이때는 사용자에게 알리라는 안내를 덧붙인다.
+  - `.harness/project.json`의 `skipMacroValidation`이 `true`면 build·test가 `-skipMacroValidation`을 붙인다. 패키지 코드를 믿을지 정하는 일이라 기본은 끄고 사람이 켠다([ADR 0006](decisions/0006-xcodeproj-local-packages.md)).
 
 ## test
 
@@ -46,6 +49,7 @@ scripts/harness/build --generate         # 프로젝트를 다시 생성한 뒤 
 scripts/harness/test                          # 앱 단위 테스트 (app.unitTestTargets만, UI 테스트 제외)
 scripts/harness/test --scheme CoreTracking    # 모듈 스킴의 테스트
 scripts/harness/test --only CoreTrackingTests/LeanAngleAnalyzerTests   # 일부만
+scripts/harness/test --package Packages --scheme AppModules-Package     # 로컬 패키지를 패키지 폴더에서
 ```
 
 - 순서: 필요하면 install·generate → `xcodebuild test -quiet` → `xcresulttool get test-results`로 요약
@@ -58,6 +62,10 @@ scripts/harness/test --only CoreTrackingTests/LeanAngleAnalyzerTests   # 일부�
   - 결과 번들에는 파일 이름만 기록된다. git이 아는 파일 중 하나로 특정되면 루트 기준 경로로 바꿔 보여준다.
   - 테스트가 시작되기 전에 멈췄으면(테스트 쪽 빌드 실패 등) 빌드 에러를 build와 같은 형식으로 보여준다.
 - 앱에 단위 테스트 타깃이 없으면 실행하지 않고 그 사실만 출력한다.
+- `--package 폴더`: 앱 프로젝트 대신 그 폴더의 `Package.swift`로 테스트한다.
+  - 패키지 폴더에서 `-project`/`-workspace` 없이 `xcodebuild test`를 실행한다. 그래서 앱 프로젝트에 아직 연결하지 않은 로컬 패키지도 테스트할 수 있다.
+  - 스킴은 꼭 준다. 여러 타깃을 묶은 패키지의 스킴은 보통 `<패키지 이름>-Package`다. 패키지 폴더에서 `xcodebuild -list`로 확인한다.
+  - DerivedData는 패키지마다 따로 쓴다(`<워크트리 DerivedData>-<폴더>`). 앱 프로젝트와 패키지는 서로 다른 워크스페이스라 같은 빌드 폴더를 번갈아 쓰지 않게 한다.
 
 ## verify
 
@@ -69,14 +77,15 @@ scripts/harness/verify --plan        # 실행하지 않고 무엇을 할지만 �
 ```
 
 - 바뀐 파일(기본: HEAD 대비 수정 + 새 파일)을 모듈별로 묶는다.
-  - 파일이 속한 모듈은 `modules.manifest`(Project.swift)가 있는 가장 가까운 상위 디렉터리다.
-  - 앱 디렉터리(`app.path`)의 변경은 앱 단위 테스트로 이어진다.
+  - 파일이 속한 모듈은 `modules.manifest`(Tuist는 Project.swift, 로컬 패키지는 Package.swift)가 있는 가장 가까운 상위 디렉터리다.
+  - 앱 디렉터리(`app.path`)의 변경은 앱 단위 테스트로 이어진다. `app.path`가 비어 있으면 루트로 본다. 이때는 모듈에 속하지 않은 파일이 모두 앱의 변경이다.
   - `Tuist/`, `Workspace.swift`, 루트 manifest가 바뀌면 영향 범위를 알 수 없어서 전체를 테스트한다.
   - 모듈 구조가 없는 프로젝트(xcodeproj 단일 앱)는 모든 변경을 앱 변경으로 본다.
 - 앱을 먼저 빌드하고, 성공하면 바뀐 모듈의 테스트를 실행한다.
   - 앱을 먼저 빌드하는 이유: 모듈끼리의 컴파일 오류는 앱 빌드가 먼저 잡는다. 또 선언하지 않은 의존(implicit import) 때문에 모듈 스킴만으로는 빌드가 깨지는 프로젝트도 있다.
   - 바뀐 모듈에 의존하는 다른 모듈의 테스트는 돌리지 않는다. 이런 테스트 회귀가 실제로 문제가 되면 그때 추가한다.
 - 테스트할 대상이 있는지는 생성된 스킴 파일의 테스트 액션으로 판단한다. `Tests` 폴더만 있고 테스트 타깃이 없는 모듈도 있어서다. 스킴 파일이 없으면 `modules.testsDir` 폴더로 판단한다.
+- 모듈이 SPM 로컬 패키지(`modules.manifest`가 `Package.swift`)면 `test --package <모듈 폴더>`로 테스트한다. 앱에 연결했는지와 상관없이 같은 방법으로 돌릴 수 있어서다. 앱에 연결한 패키지는 앱 빌드와 패키지 테스트에서 두 번 빌드된다.
 - 단계마다 build·test가 한 줄씩 출력하고, 마지막 줄에 전체 결과를 출력한다.
   ```
   ✓ build MotoTrace · iPhone 17 Pro · 21s · 경고 1

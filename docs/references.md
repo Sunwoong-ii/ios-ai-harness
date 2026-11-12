@@ -135,9 +135,16 @@
 - `device-interaction`은 스크린샷, UI 계층, 터치로 앱 동작을 확인하는 서브에이전트용 스킬이다.
   - Xcode 27이 실행 중이고 프로젝트가 열려 있어야 한다. 처음 쓸 때 Xcode에서 에이전트 접근을 승인한다. 시뮬레이터는 27.0 이상이다.
   - Claude Code에서는 `xcrun agent plugin path --plugin-format claude`로 만든 플러그인으로 쓴 사례가 있다.
+- 새 프로젝트 형식 (WorkoutRest에서 확인, 2026-11-12)
+  - Xcode 27로 만든 프로젝트는 `.xcodeproj` 안에 `project.pbxproj` 대신 `project.xcproj`를 둔다. 끝 쉼표를 허용하는 JSON이고 `plutil -convert json`으로 읽힌다.
+  - 타깃은 `.targets[]`에 `name`, `product-type`(`application`, `bundle.unit-test`처럼 `com.apple.product-type.` 접두 없이), `build-settings`로 들어 있다. 구성별 값은 `PRODUCT_BUNDLE_IDENTIFIER[config=Debug]`처럼 키 뒤에 붙인다.
+  - 소스는 폴더 단위로 참조한다(`"kind": "folder"`). 그래서 파일을 추가·삭제해도 프로젝트 파일은 바뀌지 않는다.
+- 매크로 패키지 (WorkoutRest에서 확인, 2026-11-12)
+  - TCA·swift-dependencies처럼 매크로를 쓰는 패키지는 CLI 빌드에서 "Macro … must be enabled before it can be used"로 막힌다. `xcodebuild -skipMacroValidation`을 붙이면 넘어간다([ADR 0006](decisions/0006-xcodeproj-local-packages.md)).
 - 반영
   - 지식 큐레이션(후보 18)
   - Xcode 27 어댑터(백로그)
+  - detect의 `project.xcproj` 읽기, `skipMacroValidation` 설정(ADR 0006)
 
 ### Axiom (Claude Code 플러그인)
 
