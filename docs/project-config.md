@@ -55,8 +55,8 @@
 | `destination.simulator` | 문자열 | 빌드·테스트에 쓸 시뮬레이터 기기 이름 |
 | `destination.os` | `latest` 또는 버전 | 시뮬레이터 OS 버전. `latest`는 설치된 런타임 중 `destination.simulator` 기기가 있는 가장 최신 버전이다. `26`처럼 주 버전만 쓰면 그 안에서 가장 최신이다 |
 | `modules` | 객체 또는 `null` | 모듈을 찾는 규칙. 모듈 구조가 없으면 `null`이다 |
-| `modules.manifest` | 파일 이름 | 이 파일이 있는 디렉터리를 모듈 하나로 본다. Tuist는 `Project.swift`, SPM 로컬 패키지는 `Package.swift`다. `Package.swift`면 패키지 폴더에서 테스트한다(`test --package`) |
-| `modules.scheme` | 규칙 문자열 | 모듈 테스트를 돌릴 스킴 이름. `{dir}`은 모듈 디렉터리 이름이다. 로컬 패키지는 보통 `<패키지 이름>-Package`를 그대로 쓴다 |
+| `modules.manifest` | 파일 이름 | 이 파일이 있는 디렉터리를 모듈 하나로 본다. Tuist는 `Project.swift`, SPM 로컬 패키지는 `Package.swift`다. `Package.swift`면 패키지 폴더에서 테스트하고, 테스트가 없으면 빌드한다(`--package`) |
+| `modules.scheme` | 규칙 문자열 또는 `null` | 모듈 테스트를 돌릴 스킴 이름. `{dir}`은 모듈 디렉터리 이름이다. 로컬 패키지는 `null`로 두면 패키지 폴더의 스킴 목록에서 고른다(`-Package` 스킴, 없으면 하나뿐인 스킴) |
 | `modules.testsDir` | 디렉터리 이름 | 생성된 스킴 파일이 없을 때 쓰는 대체 기준. 모듈 안에 이 디렉터리가 있으면 테스트가 있는 모듈로 본다 |
 | `skipMacroValidation` | `true` · `false`(기본, 없어도 같음) | `true`면 build·test가 `-skipMacroValidation`을 붙인다. 매크로 패키지(TCA 등)를 Xcode에서 신뢰하지 않아도 CLI로 빌드된다. 패키지 코드를 믿을지 정하는 일이라 사람이 켠다([ADR 0006](decisions/0006-xcodeproj-local-packages.md)) |
 
@@ -66,7 +66,7 @@
 |---|---|---|---|---|
 | Tuist 모듈 프로젝트 | `tuist` | install·generate | `workspace` | 규칙 있음 |
 | xcodeproj 단일 앱 | `xcodeproj` | 둘 다 `null` | `project` (CocoaPods 등은 `workspace`) | `null` |
-| xcodeproj 앱 + SPM 로컬 패키지 | `xcodeproj` | 둘 다 `null` | `project` | `Package.swift`, 스킴 `<패키지 이름>-Package` |
+| xcodeproj 앱 + SPM 로컬 패키지 | `xcodeproj` | 둘 다 `null` | `project` | `Package.swift`, 스킴 `null`(실행할 때 고름) |
 | XcodeGen | `xcodegen` | generate | `project` | `null` |
 | SPM 패키지 | `spm` | 둘 다 `null` | 둘 다 `null` | `null` (아직 build·test 미지원) |
 
@@ -84,7 +84,7 @@ scripts/detect --write ~/path/to/app   # <프로젝트>/.harness/project.json에
   - 파일 구조: `Tuist.swift`, `Workspace.swift`, `Project.swift`, `project.yml`, `*.xcodeproj`
   - Makefile 타깃: `make generate`처럼 프로젝트가 감싼 명령을 우선한다
   - 프로젝트 파일 내용: `project.pbxproj`, 없으면 Xcode 27의 새 형식 `project.xcproj`. 둘 다 `plutil`로 JSON 변환
-  - 하위 폴더의 `Package.swift`: 하나면 모듈로 보고, `Package(name: "...")`에서 패키지 이름을 읽어 스킴을 적는다
+  - 하위 폴더의 `Package.swift`: 그 폴더들을 모듈로 본다. 스킴은 적지 않는다(제품·타깃 수에 따라 이름이 달라서 실행할 때 고른다)
   - `Package.resolved`의 swift-syntax: 매크로 패키지를 쓴다고 알리기만 한다. `skipMacroValidation`은 켜지 않는다
   - 생성된 워크스페이스가 있으면 `xcodebuild -list`, `-showBuildSettings`로 스킴과 번들 ID를 확인한다
   - `xcrun simctl`: 가장 최신 iOS 런타임의 iPhone을 고른다(Pro 모델 우선)

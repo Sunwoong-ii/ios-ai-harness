@@ -127,7 +127,7 @@
 - [ ] 14. 플러그인 배포와 init/sync/doctor
 - [ ] 15. 두 번째 프로젝트 적용: coinness-ios, 이어서 xcodeproj 앱
   - 진행 (2026-11-12): xcodeproj 앱 WorkoutRest(Xcode 27 `project.xcproj` + SPM 로컬 패키지 + TCA)를 먼저 적용했다.
-    - 막힌 곳 6건을 고쳤다: detect의 `project.xcproj`·로컬 패키지 모듈, verify의 빈 `app.path`, `test --package`, `skipMacroValidation`, `project.xcproj` 규칙 (ADR 0006, harness-log)
+    - 막힌 곳 8건을 고쳤다: detect의 `project.xcproj`·로컬 패키지 모듈, verify의 빈 `app.path`, build·test `--package`와 패키지 스킴 고르기, 테스트 없는 패키지 빌드, `skipMacroValidation`, `project.xcproj` 규칙 (ADR 0006, harness-log)
     - 남은 일: watchOS 시뮬레이터·detect (Watch 앱을 붙일 때), coinness-ios
 - [ ] 16. Codex 어댑터
 - [ ] 17. 평가: fixtures와 `claude plugin eval`로 하네스가 없을 때와 비교

@@ -32,6 +32,7 @@
 scripts/harness/build                    # 앱 스킴 빌드
 scripts/harness/build --scheme FeatureA  # 다른 스킴 빌드
 scripts/harness/build --generate         # 프로젝트를 다시 생성한 뒤 빌드
+scripts/harness/build --package Packages # 로컬 패키지를 패키지 폴더에서 빌드
 ```
 
 - 순서: 필요하면 install·generate → `xcodebuild build -quiet` → `xcresulttool get build-results`로 요약
@@ -42,6 +43,7 @@ scripts/harness/build --generate         # 프로젝트를 다시 생성한 뒤 
 - 매크로 패키지(TCA, swift-dependencies 등)는 Xcode에서 매크로 신뢰를 확인받기 전에는 CLI 빌드가 "Macro … must be enabled"로 막힌다.
   - 이때는 사용자에게 알리라는 안내를 덧붙인다.
   - `.harness/project.json`의 `skipMacroValidation`이 `true`면 build·test가 `-skipMacroValidation`을 붙인다. 패키지 코드를 믿을지 정하는 일이라 기본은 끄고 사람이 켠다([ADR 0006](decisions/0006-xcodeproj-local-packages.md)).
+- `--package 폴더`: 앱 프로젝트 대신 그 폴더의 `Package.swift`로 빌드한다. 동작은 test의 `--package`와 같다. 로그와 결과 번들은 스킴마다 남긴다(`build-<스킴>.log`).
 
 ## test
 
@@ -49,7 +51,7 @@ scripts/harness/build --generate         # 프로젝트를 다시 생성한 뒤 
 scripts/harness/test                          # 앱 단위 테스트 (app.unitTestTargets만, UI 테스트 제외)
 scripts/harness/test --scheme CoreTracking    # 모듈 스킴의 테스트
 scripts/harness/test --only CoreTrackingTests/LeanAngleAnalyzerTests   # 일부만
-scripts/harness/test --package Packages --scheme AppModules-Package     # 로컬 패키지를 패키지 폴더에서
+scripts/harness/test --package Packages     # 로컬 패키지를 패키지 폴더에서
 ```
 
 - 순서: 필요하면 install·generate → `xcodebuild test -quiet` → `xcresulttool get test-results`로 요약
@@ -64,7 +66,9 @@ scripts/harness/test --package Packages --scheme AppModules-Package     # 로컬
 - 앱에 단위 테스트 타깃이 없으면 실행하지 않고 그 사실만 출력한다.
 - `--package 폴더`: 앱 프로젝트 대신 그 폴더의 `Package.swift`로 테스트한다.
   - 패키지 폴더에서 `-project`/`-workspace` 없이 `xcodebuild test`를 실행한다. 그래서 앱 프로젝트에 아직 연결하지 않은 로컬 패키지도 테스트할 수 있다.
-  - 스킴은 꼭 준다. 여러 타깃을 묶은 패키지의 스킴은 보통 `<패키지 이름>-Package`다. 패키지 폴더에서 `xcodebuild -list`로 확인한다.
+  - `--scheme`이 없으면 패키지 폴더의 `xcodebuild -list`에서 고른다. Xcode는 제품마다 스킴을 만들고, 제품·타깃이 여럿이면 전체를 묶은 `<패키지 이름>-Package`를 더 만든다.
+    - `-Package` 스킴이 있으면 그것을, 없고 스킴이 하나뿐이면 그것(보통 패키지 이름)을 쓴다.
+    - 둘 다 아니면 스킴 목록을 보여주고 멈춘다. 그때는 `--scheme`으로 고른다.
   - DerivedData는 패키지마다 따로 쓴다(`<워크트리 DerivedData>-<폴더>`). 앱 프로젝트와 패키지는 서로 다른 워크스페이스라 같은 빌드 폴더를 번갈아 쓰지 않게 한다.
 
 ## verify
@@ -86,6 +90,8 @@ scripts/harness/verify --plan        # 실행하지 않고 무엇을 할지만 �
   - 바뀐 모듈에 의존하는 다른 모듈의 테스트는 돌리지 않는다. 이런 테스트 회귀가 실제로 문제가 되면 그때 추가한다.
 - 테스트할 대상이 있는지는 생성된 스킴 파일의 테스트 액션으로 판단한다. `Tests` 폴더만 있고 테스트 타깃이 없는 모듈도 있어서다. 스킴 파일이 없으면 `modules.testsDir` 폴더로 판단한다.
 - 모듈이 SPM 로컬 패키지(`modules.manifest`가 `Package.swift`)면 `test --package <모듈 폴더>`로 테스트한다. 앱에 연결했는지와 상관없이 같은 방법으로 돌릴 수 있어서다. 앱에 연결한 패키지는 앱 빌드와 패키지 테스트에서 두 번 빌드된다.
+  - 테스트가 없는 로컬 패키지는 건너뛰지 않고 `build --package <모듈 폴더>`로 빌드한다. 앱에 연결하기 전이면 앱 빌드에 들어가지 않아 어디서도 컴파일되지 않아서다. 결과에는 `통과: Packages(빌드)`로 나온다.
+  - `modules.scheme`이 `null`이면 스킴은 build·test가 고른다.
 - 단계마다 build·test가 한 줄씩 출력하고, 마지막 줄에 전체 결과를 출력한다.
   ```
   ✓ build MotoTrace · iPhone 17 Pro · 21s · 경고 1

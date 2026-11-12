@@ -18,6 +18,20 @@
 
 ## 기록
 
+### 2026-11-12 — 테스트 없는 로컬 패키지는 컴파일되지 않았고, 패키지 스킴 이름이 늘 `-Package`는 아니었다
+- 프로젝트·작업: WorkoutRest `WorkoutRest-feature`. 다른 세션이 로컬 패키지를 Core 모듈 하나(테스트 없음)부터 늘려 가며 검증하다 보내왔다.
+- 무슨 일이 있었나
+  - `verify --plan`이 `build WorkoutRest`와 `건너뜀 (테스트 없음): Packages`만 냈다. 패키지는 앱에 연결하기 전이라 앱 빌드에도 들어가지 않았고, build에는 `--package`가 없었다. 패키지 코드가 어디서도 컴파일되지 않았다.
+  - 제품·타깃이 하나인 패키지의 `xcodebuild -list`에는 스킴이 `WorkoutRestModules` 하나뿐이었다. detect가 적은 `WorkoutRestModules-Package`는 제품·타깃이 여럿일 때만 생긴다.
+- 원인
+  - Validation: 테스트가 없는 모듈은 앱 빌드가 컴파일한다는 가정이 앱에 연결하지 않은 패키지에는 맞지 않았다.
+  - State: 실행할 때마다 달라질 수 있는 스킴 이름을 설정 파일에 고정했다.
+- 조치 (ADR 0006 갱신)
+  - build에 `--package`를 추가했다. verify는 테스트 없는 로컬 패키지를 패키지 폴더에서 빌드한다.
+  - `--package`에 `--scheme`이 없으면 패키지 폴더의 `xcodebuild -list`에서 `-Package` 스킴을, 없으면 하나뿐인 스킴을 고른다. detect는 로컬 패키지 모듈의 스킴을 `null`로 둔다. 덕분에 패키지가 여럿이어도 모듈로 잡는다.
+  - 확인: WorkoutRest에서 `build --package Packages`가 `WorkoutRestModules` 스킴을 골라 빌드했다(2초). `modules.scheme`을 `null`로 두고 `verify`를 돌리니 앱 빌드 → 앱 테스트 2개 → `Packages(빌드)`까지 통과했다(89초). Core에 타입 오류를 넣으면 `Packages/Sources/Core/Core.swift:6:25`로 위치가 나왔다.
+- 상태: 반영됨 (단위 15)
+
 ### 2026-11-12 — xcodeproj 앱 + SPM 로컬 패키지 구성에서 하네스가 앱 일부와 패키지를 놓쳤다
 - 프로젝트·작업: 두 번째 시험장 WorkoutRest(`WorkoutRest-feature` 워크트리). 다른 세션이 Xcode 27 xcodeproj 앱에 SPM 로컬 패키지(`Packages/`, TCA)로 모듈을 나누려고 하네스를 적용하다 막힌 곳 6건을 보내왔다.
 - 무슨 일이 있었나
