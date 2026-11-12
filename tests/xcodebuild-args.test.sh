@@ -8,11 +8,16 @@ here="$(cd "$(dirname "$0")" && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-# 가짜 xcodebuild는 실행한 폴더와 인자를 $CALLS에 남긴다. xcrun은 시뮬레이터 목록만 돌려준다.
+# 가짜 xcodebuild는 실행한 폴더와 인자를 $CALLS에 남긴다. -list에는 FAKE_SCHEMES를 스킴 목록으로 돌려준다.
+# xcrun은 시뮬레이터 목록만 돌려준다.
 mkdir -p "$work/bin"
 cat > "$work/bin/xcodebuild" <<'EOF'
 #!/bin/bash
 echo "cwd=$PWD $*" >> "$CALLS"
+if [ "$1" = -list ]; then
+  printf '{"workspace":{"name":"Modules","schemes":%s}}\n' "${FAKE_SCHEMES:-[\"Modules\"]}"
+  exit 0
+fi
 if [ -n "${FAKE_MACRO_ERROR:-}" ] && ! printf '%s\n' "$@" | grep -qx -- -skipMacroValidation; then
   echo '/dd/SourcePackages/checkouts/swift-dependencies/Package.swift:PACKAGE-TARGET:DependenciesMacrosPlugin: error: Macro "DependenciesMacrosPlugin" from package "swift-dependencies" must be enabled before it can be used'
   exit 65
@@ -41,7 +46,7 @@ run_script() { # 스크립트 인자...
   shift
   PATH="$work/bin:$PATH" "$here/../template/scripts/harness/$name" "$@"
 }
-call() { sed -n 1p "$CALLS"; }
+call() { tail -n 1 "$CALLS"; }   # 마지막 xcodebuild 호출 (스킴 목록 조회 뒤의 build·test)
 has_arg() { case " $(call) " in *" $1 "*) echo yes ;; *) echo no ;; esac; }
 
 # --- 앱 프로젝트 -----------------------------------------------------------------
@@ -49,17 +54,35 @@ run_script test > /dev/null
 assert_eq "test: 앱은 루트에서 실행한다" "cwd=$p" "$(call | cut -d' ' -f1)"
 assert_eq "test: 앱은 -project를 넘긴다" "yes" "$(has_arg "-project")"
 
+# --- pick_package_scheme: 패키지 폴더의 스킴 목록에서 고르기 -----------------------------------
+. "$here/../template/scripts/harness/lib.sh"
+pick() { printf '{"workspace":{"schemes":%s}}' "$1" | pick_package_scheme; }
+assert_eq "scheme: 제품·타깃이 하나면 스킴도 하나 (패키지 이름)" "Modules" "$(pick '["Modules"]')"
+assert_eq "scheme: 여럿이면 전체를 묶은 -Package 스킴" "Modules-Package" "$(pick '["Core","Data","Modules-Package"]')"
+assert_eq "scheme: -Package 없이 여럿이면 고르지 않는다" "" "$(pick '["Core","Data"]')"
+
 # --- --package: 앱에 연결하지 않은 로컬 패키지 -------------------------------------------
-out="$(run_script test --package Packages --scheme Modules-Package)"
+out="$(run_script test --package Packages)"
 assert_eq "package: 패키지 폴더에서 실행한다" "cwd=$p/Packages" "$(call | cut -d' ' -f1)"
 assert_eq "package: -project/-workspace를 넘기지 않는다" "no no" "$(has_arg -project) $(has_arg -workspace)"
 assert_eq "package: DerivedData는 패키지마다 따로" "yes" "$(has_arg "$work/dd-Packages")"
-assert_eq "package: 결과 요약" "✓ test Modules-Package · 실행된 테스트 없음" "${out%% · 0s}"
+assert_eq "package: 스킴을 안 주면 패키지 폴더의 스킴 목록에서 고른다" "yes" "$(has_arg "-scheme Modules")"
+assert_eq "package: 결과 요약" "✓ test Modules · 실행된 테스트 없음" "${out%% · 0s}"
 
-if out="$(run_script test --package Packages 2>&1)"; then code=0; else code=$?; fi
-assert_eq "package: 스킴이 없으면 설정 오류(2)" "2" "$code"
+run_script test --package Packages --scheme Given > /dev/null
+assert_eq "package: 스킴을 주면 목록을 보지 않는다" "1" "$(grep -c '' "$CALLS")"
+
+if out="$(FAKE_SCHEMES='["Core","Data"]' run_script test --package Packages 2>&1)"; then code=0; else code=$?; fi
+assert_eq "package: 스킴을 고르지 못하면 설정 오류(2)" "2" "$code"
+assert_eq "package: 고르지 못하면 스킴 목록을 보여준다" "harness: Packages에서 패키지 스킴을 하나로 정하지 못했습니다 (스킴: Core, Data). --scheme으로 고르세요" "$out"
 if out="$(run_script test --package Nowhere --scheme X 2>&1)"; then code=0; else code=$?; fi
 assert_eq "package: Package.swift가 없으면 설정 오류(2)" "2" "$code"
+
+# build --package: 테스트가 없는 패키지를 빌드만 한다
+out="$(FAKE_SCHEMES='["Core","Modules-Package"]' run_script build --package Packages)"
+assert_eq "build package: 패키지 폴더에서 -Package 스킴을 빌드한다" "cwd=$p/Packages build" "$(call | cut -d' ' -f1-2)"
+assert_eq "build package: -project를 넘기지 않는다" "no" "$(has_arg -project)"
+assert_eq "build package: 로그는 스킴마다 따로" "yes" "$(has_arg "$p/.harness/out/build-Modules-Package.xcresult")"
 
 # --- skipMacroValidation: 매크로 신뢰 확인을 건너뛰는 옵션은 프로젝트가 켤 때만 붙인다 -------------
 run_script build > /dev/null
@@ -73,7 +96,7 @@ assert_eq "macro: 막히면 사용자에게 알리라고 안내한다" "yes" "$o
 jq '.skipMacroValidation = true' "$p/.harness/project.json" > "$work/c.json" && mv "$work/c.json" "$p/.harness/project.json"
 FAKE_MACRO_ERROR=1 run_script build > /dev/null
 assert_eq "macro: 켜면 build에 붙인다" "yes" "$(has_arg -skipMacroValidation)"
-FAKE_MACRO_ERROR=1 run_script test --package Packages --scheme Modules-Package > /dev/null
+FAKE_MACRO_ERROR=1 run_script test --package Packages > /dev/null
 assert_eq "macro: 켜면 test --package에도 붙인다" "yes" "$(has_arg -skipMacroValidation)"
 
 finish
