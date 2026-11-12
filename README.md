@@ -108,7 +108,7 @@ scripts/dev-install ~/path/to/MyApp
 |---|---|
 | `*.swift` | `swift.md`, `swiftui.md`, `concurrency.md`, `dependencies.md` |
 | `Tests/` 아래, `*Tests.swift`, `*.xctestplan` | `testing.md` |
-| pbxproj, xcconfig, xcscheme, entitlements, Info.plist, `Project.swift`, `Package.swift` | `project-settings.md` |
+| pbxproj, xcproj, xcconfig, xcscheme, entitlements, Info.plist, `Project.swift`, `Package.swift` | `project-settings.md` |
 | `Project.swift`, `Workspace.swift`, `Tuist/` | `tuist.md` |
 | 프로젝트가 정한 경로 | `.claude/rules/project/*.md` |
 

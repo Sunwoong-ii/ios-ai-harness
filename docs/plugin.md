@@ -27,6 +27,7 @@ plugin/
 
 - 파일이 속한 프로젝트는 `.harness/project.json`이 있는 가장 가까운 상위 디렉터리다. 생성기는 그 파일에서 읽는다.
 - 판단할 수 없으면 막지 않는다. 설정 파일이 없거나 입력이 깨진 경우다.
+- Xcode 27의 새 프로젝트 파일 `project.xcproj`는 막지 않는다. 사람이 읽을 수 있는 JSON이라 pbxproj처럼 쉽게 깨지지 않고, git으로 되돌릴 수 있어서다. 대신 규칙(`project-settings.md`)이 고치기 전에 반드시 사용자에게 묻게 한다.
 - 왜 훅과 권한 규칙을 나눴는지는 [ADR 0004](decisions/0004-enforcement.md)에 있다.
 
 ## 서브에이전트: ios-reviewer
