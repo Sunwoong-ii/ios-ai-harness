@@ -18,6 +18,44 @@
 
 ## 기록
 
+### 2026-11-12 — 테스트 없는 로컬 패키지는 컴파일되지 않았고, 패키지 스킴 이름이 늘 `-Package`는 아니었다
+- 프로젝트·작업: WorkoutRest `WorkoutRest-feature`. 다른 세션이 로컬 패키지를 Core 모듈 하나(테스트 없음)부터 늘려 가며 검증하다 보내왔다.
+- 무슨 일이 있었나
+  - `verify --plan`이 `build WorkoutRest`와 `건너뜀 (테스트 없음): Packages`만 냈다. 패키지는 앱에 연결하기 전이라 앱 빌드에도 들어가지 않았고, build에는 `--package`가 없었다. 패키지 코드가 어디서도 컴파일되지 않았다.
+  - 제품·타깃이 하나인 패키지의 `xcodebuild -list`에는 스킴이 `WorkoutRestModules` 하나뿐이었다. detect가 적은 `WorkoutRestModules-Package`는 제품·타깃이 여럿일 때만 생긴다.
+- 원인
+  - Validation: 테스트가 없는 모듈은 앱 빌드가 컴파일한다는 가정이 앱에 연결하지 않은 패키지에는 맞지 않았다.
+  - State: 실행할 때마다 달라질 수 있는 스킴 이름을 설정 파일에 고정했다.
+- 조치 (ADR 0006 갱신)
+  - build에 `--package`를 추가했다. verify는 테스트 없는 로컬 패키지를 패키지 폴더에서 빌드한다.
+  - `--package`에 `--scheme`이 없으면 패키지 폴더의 `xcodebuild -list`에서 `-Package` 스킴을, 없으면 하나뿐인 스킴을 고른다. detect는 로컬 패키지 모듈의 스킴을 `null`로 둔다. 덕분에 패키지가 여럿이어도 모듈로 잡는다.
+  - 확인: WorkoutRest에서 `build --package Packages`가 `WorkoutRestModules` 스킴을 골라 빌드했다(2초). `modules.scheme`을 `null`로 두고 `verify`를 돌리니 앱 빌드 → 앱 테스트 2개 → `Packages(빌드)`까지 통과했다(89초). Core에 타입 오류를 넣으면 `Packages/Sources/Core/Core.swift:6:25`로 위치가 나왔다.
+- 상태: 반영됨 (단위 15)
+
+### 2026-11-12 — xcodeproj 앱 + SPM 로컬 패키지 구성에서 하네스가 앱 일부와 패키지를 놓쳤다
+- 프로젝트·작업: 두 번째 시험장 WorkoutRest(`WorkoutRest-feature` 워크트리). 다른 세션이 Xcode 27 xcodeproj 앱에 SPM 로컬 패키지(`Packages/`, TCA)로 모듈을 나누려고 하네스를 적용하다 막힌 곳 6건을 보내왔다.
+- 무슨 일이 있었나
+  - 앱 프로젝트에 `project.pbxproj`가 없고 새 형식 `project.xcproj`만 있었다. detect가 타깃을 읽지 못해 `unitTestTargets`가 `[]`, 번들 ID가 `null`이었고 경고도 없었다.
+  - 모듈 탐지가 Tuist(`Project.swift`) 전용이었다.
+  - `app.path`가 `null`이면, 모듈이 있을 때 verify가 루트의 앱 소스(`WorkoutRest/`) 변경을 무시했다.
+  - build·test는 항상 `-project`/`-workspace`로 실행해서, 앱에 아직 연결하지 않은 패키지는 테스트할 방법이 없었다.
+  - 패키지를 테스트하면 `Macro "ComposableArchitectureMacros" … must be enabled before it can be used`로 막혔다. 직접 재현했다.
+  - 하네스 훅·규칙이 `project.xcproj`를 몰랐다.
+- 원인
+  - State: detect가 새 프로젝트 형식과 로컬 패키지 모듈을 몰랐다.
+  - Execution: test가 패키지 폴더에서 실행하는 경로가 없었고, 매크로 검증을 넘길 방법이 없었다.
+  - Validation: verify가 비어 있는 `app.path`를 다루지 못했다.
+- 조치 (ADR 0006)
+  - detect: `project.xcproj`에서 타깃을 읽는다. 하위 폴더의 `Package.swift` 하나를 모듈로 보고 스킴을 `<패키지 이름>-Package`로 적는다. swift-syntax를 받으면 매크로 패키지를 쓴다고 알린다.
+  - verify: `app.path`가 비면 루트로 본다. 로컬 패키지 모듈은 `test --package`로 테스트한다.
+  - test: `--package 폴더`를 추가했다.
+  - 설정 `skipMacroValidation`(기본 끔): 켜면 build·test가 `-skipMacroValidation`을 붙인다. 막히면 출력이 사용자에게 알리라고 안내한다.
+  - `project.xcproj`: 훅으로 막지 않고, 고치기 전에 사용자에게 묻는 규칙만 넣었다(사용자 결정).
+  - 확인: WorkoutRest에 dev-install → detect가 앱 단위 테스트 타깃·번들 ID·패키지 모듈을 채웠다.
+    - `verify`(153초): 앱 빌드 통과 → 앱 테스트 2개 통과 → 패키지 테스트가 매크로에서 막히고 안내가 나왔다.
+    - `skipMacroValidation`을 잠시 켜니 매크로 단계를 넘어 초안 코드의 첫 컴파일 에러(`Packages/Sources/Feature/Timer/Impl/TimerFeature.swift:40:36`)가 위치와 함께 나왔다.
+- 상태: 반영됨 (단위 15)
+
 ### 2026-11-10 — 기능 하나(설정 화면)를 하네스로만 구현하며 나온 피드백
 - 프로젝트·작업: MotoTrace `MotoTrace-feature` 워크트리. 다른 세션이 설정 화면(슬라이더 3개, 위치 권한 표시)을 하네스 경로로만 구현했다. 커밋 7개, 20여 파일, 새 모듈 연결·테스트·UI 확인까지. 막힌 곳을 기록해 보내왔다.
 - 무슨 일이 있었나

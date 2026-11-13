@@ -150,4 +150,41 @@ jq -n '{
 echo '// changed' >> "$p/App/App.swift"
 assert_eq "plan: 모듈 구조가 없으면 모든 변경을 앱 변경으로 본다" "  test 앱 (App: AppTests)" "$(plan | sed -n 3p)"
 
+# --- verify --plan (xcodeproj 앱 + 하위 폴더의 SPM 로컬 패키지) ---------------------------
+# 앱 소스는 루트 바로 아래에 있고 app.path는 비어 있다. 스킴은 test·build가 패키지 폴더에서 고른다(null).
+# Packages는 테스트가 있고, Tools는 테스트가 없다.
+p="$work/xcodeproj-spm"
+mkdir -p "$p/.harness" "$p/App" "$p/Packages/Sources/Core" "$p/Packages/Tests/CoreTests" "$p/Tools/Sources/Gen"
+echo '// source' > "$p/App/App.swift"
+echo '// manifest' > "$p/Packages/Package.swift"
+echo '// source' > "$p/Packages/Sources/Core/Core.swift"
+echo '// test' > "$p/Packages/Tests/CoreTests/CoreTests.swift"
+echo '// manifest' > "$p/Tools/Package.swift"
+echo '// source' > "$p/Tools/Sources/Gen/Gen.swift"
+jq -n '{
+  schemaVersion: 1, generator: "xcodeproj", commands: { install: null, generate: null },
+  workspace: null, project: "App.xcodeproj",
+  app: { scheme: "App", path: null, bundleId: null, unitTestTargets: ["AppTests"] },
+  destination: { simulator: "iPhone 17 Pro", os: "latest" },
+  modules: { manifest: "Package.swift", scheme: null, testsDir: "Tests" } }' > "$p/.harness/project.json"
+(cd "$p" && git init -q -b main && git add -A && git -c user.name=t -c user.email=t@t commit -qm init)
+
+echo '// changed' >> "$p/App/App.swift"
+assert_eq "plan: app.path가 비어 있으면 모듈 밖 파일을 앱 변경으로 본다" "  test 앱 (App: AppTests)" "$(plan | sed -n 3p)"
+reset
+
+echo '// changed' >> "$p/Packages/Sources/Core/Core.swift"
+assert_eq "plan: SPM 패키지 모듈은 패키지 폴더에서 테스트한다" "  test Packages (패키지 폴더 Packages에서)" "$(plan | sed -n 3p)"
+reset
+
+echo '// changed' >> "$p/Tools/Sources/Gen/Gen.swift"
+assert_eq "plan: 테스트 없는 SPM 패키지는 건너뛰지 않고 빌드한다" "  build Tools (패키지 폴더 Tools에서 · 테스트 없음)" "$(plan | sed -n 3p)"
+reset
+
+jq '.modules.scheme = "Modules-Package"' "$p/.harness/project.json" > "$work/c.json" && cp "$work/c.json" "$p/.harness/project.json"
+(cd "$p" && git -c user.name=t -c user.email=t@t commit -qam scheme)
+echo '// changed' >> "$p/Packages/Sources/Core/Core.swift"
+assert_eq "plan: 스킴을 적으면 그 스킴을 쓴다" "  test Packages (Modules-Package, 패키지 폴더 Packages에서)" "$(plan | sed -n 3p)"
+reset
+
 finish

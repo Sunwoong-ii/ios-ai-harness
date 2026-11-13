@@ -1,6 +1,7 @@
 ---
 paths:
   - "**/*.pbxproj"
+  - "**/*.xcproj"
   - "**/*.xcconfig"
   - "**/*.xcscheme"
   - "**/*.entitlements"
@@ -20,4 +21,5 @@ paths:
 
 - `.pbxproj`를 직접 편집하지 않는다. 프로젝트 생성 도구(Tuist, XcodeGen 등)가 있으면 manifest를 수정한다.
 - 생성 도구가 없는데 파일 추가·삭제에 `.pbxproj` 변경이 필요하면, 직접 고치지 않고 사용자에게 알린다.
+- Xcode 27의 새 프로젝트 파일 `project.xcproj`는 고치기 전에 반드시 사용자에게 묻는다. 무엇을 왜 바꾸는지(타깃, 패키지 연결, 빌드 설정 등) 먼저 보여준다.
 - 서명, 번들 ID, capabilities, entitlements 변경은 사용자 확인 후에 한다. 서명·프로비저닝 오류는 직접 해결하려 하지 않고 보고한다.

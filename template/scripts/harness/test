@@ -7,12 +7,14 @@ here="$(cd "$(dirname "$0")" && pwd)"
 
 usage() {
   cat <<'EOF'
-사용법: scripts/harness/test [--scheme 스킴] [--only 대상]... [--generate]
+사용법: scripts/harness/test [--scheme 스킴] [--package 폴더] [--only 대상]... [--generate]
 
   기본: 앱 스킴으로 app.unitTestTargets의 테스트만 실행한다 (UI 테스트 제외).
   성공하면 한 줄, 실패하면 실패한 테스트와 메시지를 출력한다.
 
   --scheme 스킴   이 스킴의 테스트 액션을 실행한다 (모듈 스킴 등)
+  --package 폴더  앱 프로젝트 대신 이 폴더의 Package.swift로 실행한다. 앱에 아직 연결하지 않은 로컬 패키지도 된다
+                  --scheme이 없으면 <패키지 이름>-Package 스킴을, 없으면 하나뿐인 스킴을 쓴다
   --only 대상      -only-testing 대상: 타깃, 타깃/클래스, 타깃/클래스/메서드. 여러 번 쓸 수 있다
   --generate      변경이 없어도 프로젝트를 다시 생성한다 (Tuist·XcodeGen)
 
@@ -21,11 +23,13 @@ EOF
 }
 
 scheme=""
+package_dir=""
 only=""
 force_generate=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --scheme) [ $# -ge 2 ] || harness_die "--scheme에 스킴 이름이 필요합니다"; scheme="$2"; shift ;;
+    --package) [ $# -ge 2 ] || harness_die "--package에 패키지 폴더가 필요합니다"; package_dir="$2"; shift ;;
     --only) [ $# -ge 2 ] || harness_die "--only에 대상이 필요합니다"; only="$only$2"$'\n'; shift ;;
     --generate) force_generate=force ;;
     -h|--help) usage; exit 0 ;;
@@ -35,8 +39,14 @@ while [ $# -gt 0 ]; do
 done
 
 harness_init
-harness_container_args
 harness_destination
+harness_extra_args
+run_dir="$root"   # xcodebuild를 실행할 폴더
+if [ -n "$package_dir" ]; then
+  harness_use_package "$package_dir"
+else
+  harness_container_args
+fi
 if [ -z "$scheme" ]; then
   scheme="$(cfg .app.scheme)"
   [ -n "$scheme" ] || harness_die "설정에 app.scheme이 없습니다"
@@ -57,7 +67,9 @@ $only
 EOF
 
 start=$SECONDS
-harness_ensure_generated "$force_generate" || exit 1
+generated_now=0
+# 패키지는 생성 대상이 아니다.
+if [ -z "$package_dir" ]; then harness_ensure_generated "$force_generate" || exit 1; fi
 
 # 스킴마다 따로 남긴다. verify가 여러 스킴을 연달아 테스트해도 앞서 실패한 스킴의 로그가 덮어써지지 않는다.
 log="$out_dir/test-$scheme.log"
@@ -66,12 +78,12 @@ rm -rf "$result"
 
 set +e
 # bash 3.2는 빈 배열을 "${arr[@]}"로 펼치면 오류가 나서 ${arr[@]+...} 형태로 쓴다.
-xcodebuild test "${container_args[@]}" \
+(cd "$run_dir" && xcodebuild test ${container_args[@]+"${container_args[@]}"} \
   -scheme "$scheme" \
   -destination "$destination" \
   -derivedDataPath "$derived_data" \
   -resultBundlePath "$result" \
-  -quiet ${only_args[@]+"${only_args[@]}"} > "$log" 2>&1
+  -quiet ${extra_args[@]+"${extra_args[@]}"} ${only_args[@]+"${only_args[@]}"}) > "$log" 2>&1
 code=$?
 set -e
 elapsed=$((SECONDS - start))

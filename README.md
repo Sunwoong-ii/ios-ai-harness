@@ -108,7 +108,7 @@ scripts/dev-install ~/path/to/MyApp
 |---|---|
 | `*.swift` | `swift.md`, `swiftui.md`, `concurrency.md`, `dependencies.md` |
 | `Tests/` 아래, `*Tests.swift`, `*.xctestplan` | `testing.md` |
-| pbxproj, xcconfig, xcscheme, entitlements, Info.plist, `Project.swift`, `Package.swift` | `project-settings.md` |
+| pbxproj, xcproj, xcconfig, xcscheme, entitlements, Info.plist, `Project.swift`, `Package.swift` | `project-settings.md` |
 | `Project.swift`, `Workspace.swift`, `Tuist/` | `tuist.md` |
 | 프로젝트가 정한 경로 | `.claude/rules/project/*.md` |
 
@@ -122,12 +122,13 @@ scripts/harness/verify --plan        # 무엇을 돌릴지만 출력
 scripts/harness/verify --base main   # main에서 갈라진 뒤의 변경 전체 (PR 전)
 scripts/harness/build                # 빌드만
 scripts/harness/test --scheme CoreTracking
+scripts/harness/test --package Packages   # SPM 로컬 패키지를 패키지 폴더에서 (build도 --package를 받는다)
 ```
 
 내부 동작은 다음과 같다. 자세한 내용은 [docs/scripts.md](docs/scripts.md)에 있다.
 
 1. **프로젝트 생성이 필요한지 판단**: Tuist·XcodeGen 프로젝트라면 파일 목록과 manifest로 지문(fingerprint)을 만든다. 지난번과 다를 때만 install·generate를 다시 돌린다. 소스 내용만 바뀌었으면 건너뛴다.
-2. **바뀐 파일을 모듈로 묶기**(verify): 파일마다 `Project.swift`가 있는 가장 가까운 상위 디렉터리를 모듈로 본다. 앱 디렉터리 변경은 앱 테스트로, `Tuist/`나 루트 manifest 변경은 전체 테스트로 이어진다.
+2. **바뀐 파일을 모듈로 묶기**(verify): 파일마다 모듈 manifest(Tuist는 `Project.swift`, SPM 로컬 패키지는 `Package.swift`)가 있는 가장 가까운 상위 디렉터리를 모듈로 본다. 앱 디렉터리 변경은 앱 테스트로, `Tuist/`나 루트 manifest 변경은 전체 테스트로 이어진다. 로컬 패키지는 패키지 폴더에서 테스트하고, 테스트가 없으면 빌드한다.
 3. **실행**: 앱을 먼저 빌드하고, 성공하면 바뀐 모듈의 테스트를 돌린다. `xcodebuild -quiet`에 결과 번들(`.xcresult`)을 남기게 한다.
 4. **판정과 요약**: `xcresulttool`로 결과 번들에서 에러와 실패만 뽑는다.
 
@@ -278,6 +279,7 @@ template 안의 경로가 그대로 대상 프로젝트 루트 기준 경로가 
 | `hooks.test.sh` | 훅이 막을 것만 막고, 판단할 수 없으면 통과시키는지 |
 | `dev-install.test.sh` | 파일 배치, AGENTS.md 관리 블록 교체, 설정 병합, 반복 실행 |
 | `ui.test.sh` | run·ui와 그 공용 함수: 앱 경로 찾기, 화면 요소 요약 규칙, AXe 확인, 실패 안내 |
+| `xcodebuild-args.test.sh` | build·test가 xcodebuild를 부르는 폴더와 인자: `--package`와 패키지 스킴 고르기, `skipMacroValidation` |
 
 ### docs/ — 설계 문서
 
@@ -296,6 +298,7 @@ template 안의 경로가 그대로 대상 프로젝트 루트 기준 경로가 
 | `decisions/0003-agents-md-areas.md` | AGENTS.md를 프로젝트 영역과 관리 블록으로 나누고 명령 블록을 고정 문장으로 둔 이유 |
 | `decisions/0004-enforcement.md` | 무엇을 훅으로, 무엇을 deny·ask로 막는지 |
 | `decisions/0005-ui-observation.md` | 앱 화면 확인 도구로 AXe와 simctl을 고른 이유 |
+| `decisions/0006-xcodeproj-local-packages.md` | xcodeproj 앱의 로컬 패키지를 패키지 폴더에서 빌드·테스트하고, 매크로 검증 건너뛰기를 프로젝트가 켜게 한 이유 |
 
 ## 설치하면 대상 프로젝트는 이렇게 된다
 
@@ -347,6 +350,7 @@ claude plugin validate plugin
 - 단위 1~8 완료: 저장소 구조, 프로젝트 설정 파일·detect, build·test·verify, 경로 규칙, AGENTS.md 템플릿, 훅·권한·플러그인, ios-reviewer
 - 단위 9 진행 중: MotoTrace에 설치를 마쳤고, 운영하며 실패를 기록하는 중이다. 이 기록으로 이후 순서를 정한다.
 - 단위 10 완료: 앱을 실행해 화면을 확인하는 run·ui와 `ios-ui-check` 스킬
-- 이후 후보: 빌드·Tuist 스킬, 워크플로 스킬, 플러그인 배포와 init/sync/doctor, 두 번째 프로젝트 적용, Codex 어댑터, 평가 등
+- 단위 15 진행 중: xcodeproj 앱 WorkoutRest(Xcode 27 `project.xcproj` + SPM 로컬 패키지)에 적용하며 막힌 곳을 고쳤다(ADR 0006).
+- 이후 후보: 빌드·Tuist 스킬, 워크플로 스킬, 플러그인 배포와 init/sync/doctor, Codex 어댑터, 평가 등
 
 자세한 내용은 [docs/roadmap.md](docs/roadmap.md)에 있다. 이 저장소에 기여하는 방법(브랜치, 커밋 규칙)은 [AGENTS.md](AGENTS.md)에 있다.

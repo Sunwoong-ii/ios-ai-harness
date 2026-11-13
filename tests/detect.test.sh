@@ -95,6 +95,63 @@ write_pbxproj "$p/Sample.xcodeproj" '"$(APP_BUNDLE_ID)"'
 out="$(run_detect "$p")"
 assert_eq "xcodeproj-var: 변수 번들 ID는 null" 'null' "$(field "$out" .app.bundleId)"
 
+# --- Xcode 27의 새 프로젝트 형식 (project.pbxproj 없이 project.xcproj만) ----------------
+# 끝 쉼표가 있는 JSON이다. 종류는 접두 없이 쓰고, 구성별 값은 [config=Debug]를 붙인다.
+p="$work/xcproj"
+mkdir -p "$p/Sample.xcodeproj"
+cat > "$p/Sample.xcodeproj/project.xcproj" <<'EOF'
+{
+  "configurations": [ "Debug", "Release", ],
+  "targets": [
+    { "name": "Sample", "product-type": "application",
+      "build-settings": { "PRODUCT_BUNDLE_IDENTIFIER[config=Debug]": "com.example.Sample.debug", "PRODUCT_BUNDLE_IDENTIFIER": "com.example.Sample", }, },
+    { "name": "SampleTests", "product-type": "bundle.unit-test", "build-settings": { "PRODUCT_BUNDLE_IDENTIFIER": "com.example.SampleTests", }, },
+    { "name": "SampleUITests", "product-type": "bundle.ui-testing", },
+  ],
+}
+EOF
+
+out="$(run_detect "$p")"
+assert_eq "xcproj: 앱 스킴은 앱 타깃 이름" '"Sample"' "$(field "$out" .app.scheme)"
+assert_eq "xcproj: 번들 ID는 Debug 구성 값을 먼저 쓴다" '"com.example.Sample.debug"' "$(field "$out" .app.bundleId)"
+assert_eq "xcproj: UI 테스트는 빼고 단위 테스트만" '["SampleTests"]' "$(field "$out" .app.unitTestTargets)"
+
+# --- xcodeproj 앱 + 하위 폴더의 SPM 로컬 패키지 ----------------------------------------
+# 스킴은 제품·타깃 수에 따라 달라서 적지 않는다. 의존성 체크아웃 안의 Package.swift는 모듈이 아니다.
+p="$work/xcodeproj-spm"
+write_pbxproj "$p/App.xcodeproj" "com.example.App"
+mkdir -p "$p/Packages/.build/checkouts/dep" "$p/Packages/Tests"
+echo 'let package = Package(name: "AppModules")' > "$p/Packages/Package.swift"
+echo 'let package = Package(name: "Dependency")' > "$p/Packages/.build/checkouts/dep/Package.swift"
+
+out="$("$detect" "$p" 2> "$work/err")"
+assert_eq "spm: 패키지 폴더를 모듈로, 스킴은 비워 둔다" \
+  '{"manifest":"Package.swift","scheme":null,"testsDir":"Tests"}' "$(field "$out" .modules)"
+if grep -q 'SPM 로컬 패키지 1개 (Packages)' "$work/err"; then noted=1; else noted=0; fi
+assert_eq "spm: 체크아웃 안의 패키지는 세지 않는다" "1" "$noted"
+assert_eq "spm: 매크로 확인 건너뛰기는 켜지 않는다" 'false' "$(field "$out" .skipMacroValidation)"
+
+# swift-syntax를 받는 프로젝트(매크로 패키지)는 알리기만 한다.
+printf '{"pins":[{"identity":"swift-syntax"}]}\n' > "$p/Packages/Package.resolved"
+out="$("$detect" "$p" 2> "$work/err")"
+if grep -q '매크로 패키지를 씁니다 (Packages/Package.resolved' "$work/err"; then noted=1; else noted=0; fi
+assert_eq "spm: 매크로 패키지를 쓰면 알린다" "1" "$noted"
+assert_eq "spm: 매크로 패키지가 있어도 켜지 않는다" 'false' "$(field "$out" .skipMacroValidation)"
+
+# 패키지가 여럿이어도 폴더마다 스킴을 고르니 규칙 하나로 된다.
+mkdir -p "$p/Tools"
+echo 'let package = Package(name: "Tools")' > "$p/Tools/Package.swift"
+out="$("$detect" "$p" 2> "$work/err")"
+assert_eq "spm: 패키지가 여럿이어도 모듈 규칙은 같다" '"Package.swift"' "$(field "$out" .modules.manifest)"
+if grep -q 'SPM 로컬 패키지 2개 (Packages, Tools)' "$work/err"; then noted=1; else noted=0; fi
+assert_eq "spm: 찾은 패키지 폴더를 알린다" "1" "$noted"
+
+p="$work/no-project-file"
+mkdir -p "$p/Sample.xcodeproj"
+"$detect" "$p" > /dev/null 2> "$work/err"
+if grep -q 'project.pbxproj도 project.xcproj도 없습니다' "$work/err"; then warned=1; else warned=0; fi
+assert_eq "no-project-file: 프로젝트 파일이 없으면 경고한다" "1" "$warned"
+
 # --- XcodeGen ---------------------------------------------------------------
 p="$work/xcodegen"
 mkdir -p "$p"

@@ -57,7 +57,7 @@ Claude Code는 아래 규칙을 해당 파일을 읽을 때 자동으로 불러�
 |---|---|
 | Swift 코드 | `.claude/rules/harness/swift.md`, `swiftui.md`, `concurrency.md`, `dependencies.md` |
 | 테스트 코드, 테스트 플랜 | `.claude/rules/harness/testing.md` |
-| 프로젝트 파일·빌드 설정(pbxproj, xcconfig, entitlements, Info.plist, manifest) | `.claude/rules/harness/project-settings.md` |
+| 프로젝트 파일·빌드 설정(pbxproj, xcproj, xcconfig, entitlements, Info.plist, manifest) | `.claude/rules/harness/project-settings.md` |
 | Tuist manifest(`Project.swift`, `Workspace.swift`, `Tuist/`) | `.claude/rules/harness/tuist.md` |
 | 이 프로젝트에만 있는 규칙 | `.claude/rules/project/` |
 

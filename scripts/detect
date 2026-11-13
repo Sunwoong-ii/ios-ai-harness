@@ -267,7 +267,7 @@ fi
 
 app_path=""           # 앱 manifest(Project.swift)가 있는 디렉터리, 루트 기준 (예: MotoTrace). Tuist만 채운다
 app_project_name=""   # 앱 .xcodeproj 이름에서 확장자를 뺀 것 (예: MotoTrace)
-app_pbxproj=""        # 앱 타깃을 읽을 project.pbxproj 절대 경로 (예: <루트>/MotoTrace/MotoTrace.xcodeproj/project.pbxproj)
+app_xcodeproj_dir=""  # 앱 타깃을 읽을 .xcodeproj 절대 경로 (예: <루트>/MotoTrace/MotoTrace.xcodeproj)
 case "$generator" in
   tuist)
     # product: .app이 있는 Project.swift를 찾는다. 생성물·의존성 폴더는 뺀다.
@@ -294,7 +294,7 @@ case "$generator" in
       app_xcodeproj="$(first_match "$project_dir/$app_path" '*.xcodeproj')"   # 생성된 앱 프로젝트 (예: MotoTrace.xcodeproj)
       if [ -n "$app_xcodeproj" ]; then
         app_project_name="${app_xcodeproj%.xcodeproj}"
-        app_pbxproj="$project_dir/$app_path/$app_xcodeproj/project.pbxproj"
+        app_xcodeproj_dir="$project_dir/$app_path/$app_xcodeproj"
       else
         # 아직 생성 전이면 디렉터리 이름으로 추정한다.
         app_project_name="$(basename "$project_dir/$app_path")"
@@ -311,15 +311,14 @@ case "$generator" in
 
     if [ -n "$app_xcodeproj" ]; then
       app_project_name="${app_xcodeproj%.xcodeproj}"
-      app_pbxproj="$project_dir/$app_xcodeproj/project.pbxproj"
+      app_xcodeproj_dir="$project_dir/$app_xcodeproj"
     fi
     ;;
 esac
 
-# pbxproj의 타깃 목록을 한 번만 읽어 둔다. pbxproj는 plutil로 JSON 변환한다.
+# 앱 프로젝트의 타깃 목록을 한 번만 읽어 둔다. 프로젝트 파일은 형식이 두 가지이고, 둘 다 plutil로 JSON 변환한다.
 #
-# plutil로 바꾼 pbxproj 예 (필요한 부분만). objects는 ID → 객체 사전이고,
-# 타깃은 설정 목록 ID를, 설정 목록은 설정 ID들을 가리킨다.
+# project.pbxproj (기존 형식). objects는 ID → 객체 사전이고, 타깃은 설정 목록 ID를, 설정 목록은 설정 ID들을 가리킨다.
 #   {"objects": {
 #     "T1": {"isa":"PBXNativeTarget", "name":"MotoTrace", "buildConfigurationList":"L1",
 #            "productType":"com.apple.product-type.application"},
@@ -328,13 +327,22 @@ esac
 #            "buildSettings":{"PRODUCT_BUNDLE_IDENTIFIER":"com.woong.MotoTrace"}}
 #   }}
 #
-# targets_json: 타깃마다 이름·종류·Debug 번들 ID를 뽑은 배열. pbxproj가 없거나 못 읽으면 빈 문자열
+# project.xcproj (Xcode 27의 새 형식, 끝 쉼표가 있는 JSON). 종류는 com.apple.product-type. 접두 없이 쓰고,
+# 구성별 값은 설정 이름 뒤에 [config=Debug]를 붙인다.
+#   {"targets": [
+#     {"name":"WorkoutRest", "product-type":"application",
+#      "build-settings":{"PRODUCT_BUNDLE_IDENTIFIER":"com.woong.WorkoutRest"}}
+#   ]}
+#
+# targets_json: 타깃마다 이름·종류·Debug 번들 ID를 뽑은 배열. 프로젝트 파일이 없거나 못 읽으면 빈 문자열
 #   [{"name":"MotoTrace", "type":"com.apple.product-type.application", "bundleId":"com.woong.MotoTrace"},
 #    {"name":"MotoTraceTests", "type":"com.apple.product-type.bundle.unit-test", "bundleId":"com.woong.MotoTraceTests"}]
 targets_json=""
-if [ -n "$app_pbxproj" ] && [ -f "$app_pbxproj" ]; then
+project_file=""   # 타깃을 읽은 프로젝트 파일 이름: project.pbxproj 또는 project.xcproj
+if [ -n "$app_xcodeproj_dir" ] && [ -f "$app_xcodeproj_dir/project.pbxproj" ]; then
+  project_file="project.pbxproj"
   targets_json="$(
-    plutil -convert json -o - "$app_pbxproj" 2> /dev/null \
+    plutil -convert json -o - "$app_xcodeproj_dir/$project_file" 2> /dev/null \
       | jq -c '
         .objects as $objects
         | [ $objects[]
@@ -353,9 +361,27 @@ if [ -n "$app_pbxproj" ] && [ -f "$app_pbxproj" ]; then
           ]' 2> /dev/null \
       || true
   )"
-  if [ -z "$targets_json" ]; then
-    warn "pbxproj를 읽지 못했습니다: $app_pbxproj"
-  fi
+elif [ -n "$app_xcodeproj_dir" ] && [ -f "$app_xcodeproj_dir/project.xcproj" ]; then
+  project_file="project.xcproj"
+  targets_json="$(
+    plutil -convert json -o - "$app_xcodeproj_dir/$project_file" 2> /dev/null \
+      | jq -c '
+        [ .targets[]?
+          | (."build-settings" // {}) as $settings
+          | {
+              name,
+              type: (."product-type" // "" | if startswith("com.apple.") then . else "com.apple.product-type." + . end),
+              bundleId: ($settings["PRODUCT_BUNDLE_IDENTIFIER[config=Debug]"] // $settings.PRODUCT_BUNDLE_IDENTIFIER)
+            }
+        ]' 2> /dev/null \
+      || true
+  )"
+elif [ -n "$app_xcodeproj_dir" ] && [ -d "$app_xcodeproj_dir" ]; then
+  warn "${app_xcodeproj_dir#$project_dir/}에 project.pbxproj도 project.xcproj도 없습니다." \
+    "앱 스킴, 번들 ID, 단위 테스트 타깃을 직접 채우세요"
+fi
+if [ -n "$project_file" ] && [ -z "$targets_json" ]; then
+  warn "프로젝트 파일을 읽지 못했습니다: ${app_xcodeproj_dir#$project_dir/}/$project_file"
 fi
 
 # 앱 타깃이 여러 개면 프로젝트 이름과 같은 것을 먼저 고른다.
@@ -425,7 +451,7 @@ fi
 
 # --- 번들 ID ----------------------------------------------------------------
 # 결과: app.bundleId
-# pbxproj의 앱 타깃 값을 먼저 쓴다. $(VAR)처럼 빌드 설정 변수면 앱 스킴으로 xcodebuild에 실제 값을 묻는다.
+# 프로젝트 파일의 앱 타깃 값을 먼저 쓴다. $(VAR)처럼 빌드 설정 변수면 앱 스킴으로 xcodebuild에 실제 값을 묻는다.
 
 bundle_id=""              # 앱 번들 ID (예: com.woong.MotoTrace)
 bundle_id_unresolved=""   # 확인하지 못한 원래 값 (예: $(APP_BUNDLE_ID)). 경고에 보여 준다
@@ -459,7 +485,7 @@ if [ -z "$bundle_id" ] && [ -n "$app_scheme" ] && [ "$offline" != 1 ] && [ "$con
     note "번들 ID: $bundle_id (xcodebuild -showBuildSettings)"
   fi
 elif [ -n "$bundle_id" ]; then
-  note "번들 ID: $bundle_id (pbxproj)"
+  note "번들 ID: $bundle_id ($project_file)"
 fi
 
 if [ -z "$bundle_id" ]; then
@@ -552,6 +578,53 @@ if [ "$generator" = "tuist" ]; then
   fi
 fi
 
+# --- 모듈 (SPM 로컬 패키지) -----------------------------------------------------
+# 결과: modules
+# xcodeproj·XcodeGen 앱의 하위 폴더에 Package.swift가 있으면 그 폴더를 모듈 하나로 본다 (예: Packages/).
+# 스킴은 적지 않는다(null). 패키지 스킴 이름은 제품·타깃 수에 따라 "<패키지 이름>-Package"이거나 패키지 이름이라,
+# build·test가 실행할 때 패키지 폴더의 스킴 목록에서 고른다. 그래서 패키지가 여럿이어도 규칙 하나로 된다.
+
+if [ "$generator" = "xcodeproj" ] || [ "$generator" = "xcodegen" ]; then
+  # 패키지 폴더 목록. 한 줄에 하나, 루트 기준 (예: Packages). 의존성 체크아웃·빌드 폴더는 뺀다.
+  package_dirs="$(
+    cd "$project_dir" \
+      && find . -mindepth 2 -name Package.swift \
+        -not -path '*/.build/*' \
+        -not -path '*/.swiftpm/*' \
+        -not -path '*/SourcePackages/*' \
+        -not -path '*/Derived/*' \
+        -not -path './.harness/*' 2> /dev/null \
+      | sed -e 's|^\./||' -e 's|/Package.swift$||' \
+      | sort \
+      || true
+  )"
+  if [ -n "$package_dirs" ]; then
+    modules_json='{"manifest":"Package.swift","scheme":null,"testsDir":"Tests"}'
+    note "모듈: SPM 로컬 패키지 $(printf '%s\n' "$package_dirs" | wc -l | tr -d ' ')개 ($(printf '%s\n' "$package_dirs" | paste -sd ',' - | sed 's/,/, /g'))." \
+      "스킴은 build·test가 패키지 폴더에서 고릅니다"
+  fi
+fi
+
+# --- 매크로 패키지 ---------------------------------------------------------------
+# swift-syntax를 받는 프로젝트는 매크로 패키지(TCA 등)를 쓴다. CLI 빌드는 Xcode에서 매크로 신뢰를 확인받기 전에는 막힌다.
+# 확인을 건너뛰는 skipMacroValidation은 패키지 코드를 믿을지 정하는 일이라 detect가 켜지 않고 알리기만 한다.
+resolved_with_macros="$(
+  cd "$project_dir" \
+    && find . -name Package.resolved \
+      -not -path '*/.build/*' \
+      -not -path '*/SourcePackages/*' \
+      -not -path '*/Derived/*' 2> /dev/null \
+    | while IFS= read -r resolved; do
+        if grep -q 'swift-syntax' "$resolved"; then printf '%s\n' "${resolved#./}"; fi
+      done \
+    | head -n 1 \
+    || true
+)"
+if [ -n "$resolved_with_macros" ]; then
+  note "매크로 패키지를 씁니다 ($resolved_with_macros에 swift-syntax)." \
+    "빌드가 'Macro … must be enabled'로 막히면 사람이 확인한 뒤 skipMacroValidation을 true로 바꾸세요"
+fi
+
 # --- 시뮬레이터 -------------------------------------------------------------
 # 결과: destination.simulator
 # 가장 최신 iOS 런타임의 iPhone 중 번호가 가장 큰 Pro 모델, 없으면 첫 iPhone을 고른다.
@@ -635,7 +708,8 @@ draft_json="$(
         simulator: ($simulator | orNull),
         os: "latest"
       },
-      modules: $modules
+      modules: $modules,
+      skipMacroValidation: false
     }'
 )"
 

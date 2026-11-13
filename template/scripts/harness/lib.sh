@@ -42,6 +42,14 @@ cfg() {
   jq -r "($1) // empty" "$config"
 }
 
+# 프로젝트가 설정 파일에서 켠 xcodebuild 옵션을 extra_args 배열에 담는다. build·test가 부른다.
+# skipMacroValidation: 매크로 패키지(TCA 등)는 Xcode에서 신뢰를 확인받기 전에는 CLI 빌드가 막힌다.
+# 이 확인을 건너뛰는 옵션이다. 패키지 코드를 믿을지는 사람이 정할 일이라 기본은 끄고, 프로젝트가 켤 때만 붙인다.
+harness_extra_args() {
+  extra_args=()
+  if [ "$(cfg .skipMacroValidation)" = true ]; then extra_args+=(-skipMacroValidation); fi
+}
+
 # xcodebuild의 -workspace/-project 인자를 container_args 배열에 담는다.
 harness_container_args() {
   local ws pj
@@ -53,6 +61,52 @@ harness_container_args() {
     container_args=(-project "$root/$pj")
   else
     harness_die "설정에 workspace도 project도 없습니다"
+  fi
+}
+
+# --- SPM 로컬 패키지 (build·test --package) --------------------------------------
+
+# xcodebuild -list JSON(stdin)에서 패키지 스킴을 고른다. 고르지 못하면 빈 문자열.
+# Xcode는 제품마다 스킴을 만들고, 제품·타깃이 여럿이면 전체를 묶은 "<패키지 이름>-Package"를 더 만든다.
+# 그래서 -Package 스킴이 있으면 그것을, 없고 스킴이 하나뿐이면 그것을 쓴다.
+pick_package_scheme() {
+  jq -r '
+    (.workspace.schemes // .project.schemes // []) as $schemes
+    | ($schemes | map(select(endswith("-Package")))) as $whole
+    | if ($whole | length) == 1 then $whole[0]
+      elif ($schemes | length) == 1 then $schemes[0]
+      else empty end'
+}
+
+# 패키지 폴더($1, 상대 경로는 루트 기준)에서 실행하도록 run_dir·container_args·derived_data를 바꾼다.
+# 패키지 폴더에서 -project/-workspace 없이 실행하면 xcodebuild가 Package.swift를 읽는다.
+# 그래서 앱 프로젝트에 아직 연결하지 않은 패키지도 빌드·테스트할 수 있다.
+# scheme이 비어 있으면 그 폴더의 스킴 목록에서 고른다. harness_init 뒤에 부른다.
+harness_use_package() {
+  local dir="$1" rel json schemes
+  case "$dir" in /*) ;; *) dir="$root/$dir" ;; esac
+  [ -f "$dir/Package.swift" ] || harness_die "Package.swift가 없습니다: $dir"
+  package_dir="$(cd "$dir" && pwd)"
+  run_dir="$package_dir"
+  container_args=()
+  # 앱 프로젝트와 패키지는 서로 다른 워크스페이스다. 같은 빌드 폴더를 번갈아 쓰지 않게 패키지마다 따로 둔다.
+  # 예: <앱 DerivedData>-Packages, 루트의 패키지면 <앱 DerivedData>-package
+  rel="${package_dir#"$root"}"
+  rel="${rel#/}"
+  derived_data="$derived_data-$(printf '%s' "${rel:-package}" | tr '/' '-')"
+
+  [ -z "$scheme" ] || return 0
+  if ! json="$(cd "$package_dir" && xcodebuild -list -json 2> "$out_dir/package-list.log")"; then
+    {
+      echo "harness: ${rel:-.}의 스킴 목록을 읽지 못했습니다 (xcodebuild -list). Package.swift를 확인하세요"
+      { grep -E 'error' "$out_dir/package-list.log" || true; } | head -n 5 | sed 's/^/  /'
+    } >&2
+    exit 2
+  fi
+  scheme="$(printf '%s' "$json" | pick_package_scheme)"
+  if [ -z "$scheme" ]; then
+    schemes="$(printf '%s' "$json" | jq -r '(.workspace.schemes // .project.schemes // []) | join(", ")')"
+    harness_die "${rel:-.}에서 패키지 스킴을 하나로 정하지 못했습니다 (스킴: ${schemes:-없음}). --scheme으로 고르세요"
   fi
 }
 
@@ -325,6 +379,10 @@ harness_print_build_errors() {
     fi
   else
     { grep -E 'error:|ERROR' "$log" || tail -n 20 "$log"; } | head -n 20 | sed 's/^/  /' || true
+  fi
+  # 매크로 패키지(TCA 등)는 CLI 빌드에서 매크로 신뢰 확인에 막힌다. 켜는 것은 사람이 정한다.
+  if grep -q 'must be enabled before it can be used' "$log" 2>/dev/null && [ "$(cfg .skipMacroValidation)" != true ]; then
+    echo "  매크로 사용 허가가 필요합니다. 사용자에게 알리고, 허가하면 .harness/project.json에 \"skipMacroValidation\": true를 넣습니다"
   fi
 }
 
